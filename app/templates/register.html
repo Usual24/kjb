@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>회원가입</h2>
+  <form id="register-form">
+    <input type="email" name="email" placeholder="이메일" required />
+    <input type="text" name="nickname" placeholder="닉네임" required />
+    <input type="password" name="password" placeholder="비밀번호" required />
+    <button class="btn" type="submit">가입</button>
+  </form>
+</section>
+{% endblock %}

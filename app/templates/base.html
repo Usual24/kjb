@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>공작방(KJB)</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body class="theme-dark">
+  <div class="layout">
+    <aside class="sidebar-left">
+      <div class="logo">공작방(KJB)</div>
+      <nav>
+        <a href="/channel">채널</a>
+        <a href="/board">게시판</a>
+      </nav>
+    </aside>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+    <aside class="sidebar-right">
+      <div class="panel-title">온라인</div>
+      <ul id="online-users"></ul>
+    </aside>
+  </div>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
