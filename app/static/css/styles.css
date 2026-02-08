@@ -1,0 +1,111 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1117;
+  --bg-alt: #151a23;
+  --text: #e6e9ef;
+  --accent: #7c5cff;
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Sans KR", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  min-height: 100vh;
+}
+
+.sidebar-left,
+.sidebar-right {
+  background: var(--bg-alt);
+  padding: 20px;
+}
+
+.logo {
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+nav a {
+  display: block;
+  color: var(--text);
+  text-decoration: none;
+  padding: 8px 0;
+}
+
+.content {
+  padding: 24px;
+}
+
+.hero {
+  max-width: 480px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--accent);
+}
+
+.panel {
+  background: #111622;
+  border-radius: 12px;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #2a3245;
+  background: #0f1320;
+  color: var(--text);
+}
+
+.chat-log {
+  min-height: 240px;
+  border: 1px solid #2a3245;
+  border-radius: 8px;
+  padding: 12px;
+  background: #0f1320;
+}
+
+.board-list {
+  min-height: 180px;
+  border: 1px solid #2a3245;
+  border-radius: 8px;
+  padding: 12px;
+  background: #0f1320;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-left,
+  .sidebar-right {
+    display: none;
+  }
+}

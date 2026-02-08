@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>텍스트 채널</h2>
+  <div id="chat-log" class="chat-log"></div>
+  <form id="chat-form" class="chat-form">
+    <input type="text" name="content" placeholder="메시지 입력..." />
+    <button class="btn" type="submit">전송</button>
+  </form>
+</section>
+{% endblock %}
