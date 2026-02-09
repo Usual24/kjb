@@ -1,5 +1,6 @@
 from functools import wraps
-from datetime import timedelta
+from datetime import timedelta, timezone
+from zoneinfo import ZoneInfo
 from flask import session, redirect, url_for, g, current_app
 from .models import User
 
@@ -58,3 +59,11 @@ def adjust_kc(user, delta, reason, db, KCLog, Notification):
     user.kc_points += delta
     db.session.add(KCLog(user_id=user.id, delta=delta, reason=reason))
     notify(user.id, "KC 변동", f"{reason} ({delta:+d} KC)", db, Notification)
+
+
+def to_kst(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(ZoneInfo("Asia/Seoul"))

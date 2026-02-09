@@ -3,7 +3,7 @@ from flask import session
 from flask_socketio import join_room, leave_room, emit
 from .extensions import db
 from .models import Message, Channel, User, KCLog, Notification
-from .utils import adjust_kc
+from .utils import adjust_kc, to_kst
 
 
 online_users = set()
@@ -108,6 +108,8 @@ def register_socket_handlers(socketio):
 
 
 def serialize_message(message):
+    created_at = to_kst(message.created_at)
+    updated_at = to_kst(message.updated_at)
     return {
         "id": message.id,
         "channel_id": message.channel_id,
@@ -118,8 +120,8 @@ def serialize_message(message):
         "content": message.content,
         "reply_to": message.reply_to.content if message.reply_to else None,
         "is_deleted": message.is_deleted,
-        "created_at": message.created_at.strftime("%Y-%m-%d %H:%M"),
-        "updated_at": message.updated_at.strftime("%Y-%m-%d %H:%M"),
+        "created_at": created_at.strftime("%Y-%m-%d %H:%M"),
+        "updated_at": updated_at.strftime("%Y-%m-%d %H:%M"),
     }
 
 
