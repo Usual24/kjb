@@ -13,7 +13,7 @@
     </ul>
   </aside>
 
-  <main class="chat-main" data-channel="{{ channel.slug }}">
+  <main class="chat-main" data-channel="{{ channel.slug }}" data-can-send="{{ 'true' if can_send else 'false' }}">
     <div class="chat-header">
       <div>
         <h2>{{ channel.name }}</h2>
@@ -21,31 +21,38 @@
       </div>
     </div>
     <div id="chatMessages" class="chat-messages">
-      {% for message in messages %}
-        <div class="message" data-message-id="{{ message.id }}" data-user-id="{{ message.user_id }}">
-          <a href="/profile?usr={{ message.user.email_prefix }}" class="avatar-link">
-            <img src="{{ message.user.avatar_url }}" alt="avatar">
-          </a>
-          <div class="message-body">
-            <div class="message-meta">
-              <a href="/profile?usr={{ message.user.email_prefix }}">{{ message.user.name }}</a>
-              <span>{{ message.created_at|datetime }}</span>
-              {% if message.updated_at and message.updated_at != message.created_at %}
-                <span class="edited">수정됨</span>
+      {% if not can_read %}
+        <p class="empty">읽기 권한이 없습니다.</p>
+      {% else %}
+        {% for message in messages %}
+          <div class="message" data-message-id="{{ message.id }}" data-user-id="{{ message.user_id }}">
+            <a href="/profile?usr={{ message.user.email_prefix }}" class="avatar-link">
+              <img src="{{ message.user.avatar_url|media }}" alt="avatar">
+            </a>
+            <div class="message-body">
+              <div class="message-meta">
+                <a href="/profile?usr={{ message.user.email_prefix }}">{{ message.user.name }}</a>
+                <span>{{ message.created_at|datetime }}</span>
+                {% if message.updated_at and message.updated_at != message.created_at %}
+                  <span class="edited">수정됨</span>
+                {% endif %}
+              </div>
+              {% if message.reply_to %}
+                <div class="reply-preview">↳ {{ message.reply_to.content }}</div>
               {% endif %}
+              <div class="message-content">{{ message.content }}</div>
             </div>
-            {% if message.reply_to %}
-              <div class="reply-preview">↳ {{ message.reply_to.content }}</div>
-            {% endif %}
-            <div class="message-content">{{ message.content }}</div>
           </div>
-        </div>
-      {% endfor %}
+        {% endfor %}
+      {% endif %}
     </div>
     <div id="replyBanner" class="reply-banner hidden"></div>
     <div class="chat-input">
-      <textarea id="chatInput" placeholder="메시지를 입력하세요..."></textarea>
-      <button class="btn primary" id="sendButton">전송</button>
+      <textarea id="chatInput" placeholder="메시지를 입력하세요..." {% if not can_send %}disabled{% endif %}></textarea>
+      <button class="btn primary" id="sendButton" {% if not can_send %}disabled{% endif %}>전송</button>
+      {% if not can_send %}
+        <p class="hint">이 채널은 메시지 전송 권한이 없습니다.</p>
+      {% endif %}
     </div>
   </main>
 

@@ -1,9 +1,19 @@
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    current_app,
+    send_from_directory,
+)
 from ..extensions import db
 from ..models import (
     User,
     Channel,
+    ChannelPermission,
     Message,
     Notification,
     KCLog,
@@ -20,6 +30,8 @@ from ..utils import (
     notify,
     adjust_kc,
     to_kst,
+    save_upload,
+    resolve_channel_permissions,
 )
 from ..sockets import online_users
 
@@ -34,9 +46,12 @@ def load_user():
 @bp.route("/")
 def index():
     if get_current_user():
-        channel = Channel.query.order_by(Channel.name.asc()).first()
-        if channel:
-            return redirect(url_for("views.chat", id=channel.slug))
+        current = get_current_user()
+        for channel in Channel.query.order_by(
+            Channel.priority.desc(), Channel.name.asc()
+        ).all():
+            if resolve_channel_permissions(current, channel)["can_view"]:
+                return redirect(url_for("views.chat", id=channel.slug))
     return render_template("index.html")
 
 
@@ -104,21 +119,49 @@ def logout():
 @login_required
 def chat():
     channel_slug = request.args.get("id")
+    current = get_current_user()
     if not channel_slug:
-        first_channel = Channel.query.order_by(Channel.name.asc()).first()
+        first_channel = None
+        for candidate in Channel.query.order_by(
+            Channel.priority.desc(), Channel.name.asc()
+        ).all():
+            if resolve_channel_permissions(current, candidate)["can_view"]:
+                first_channel = candidate
+                break
         if first_channel:
             return redirect(url_for("views.chat", id=first_channel.slug))
     channel = Channel.query.filter_by(slug=channel_slug).first()
     if not channel:
         flash("채널을 찾을 수 없습니다.")
         return redirect(url_for("views.index"))
-    messages = (
-        Message.query.filter_by(channel_id=channel.id)
-        .order_by(Message.created_at.asc())
-        .limit(200)
-        .all()
+    permissions = resolve_channel_permissions(current, channel)
+    if not permissions["can_view"]:
+        allowed = [
+            ch
+            for ch in Channel.query.order_by(
+                Channel.priority.desc(), Channel.name.asc()
+            ).all()
+            if resolve_channel_permissions(current, ch)["can_view"]
+        ]
+        if allowed:
+            return redirect(url_for("views.chat", id=allowed[0].slug))
+        flash("접근 가능한 채널이 없습니다.")
+        return redirect(url_for("views.index"))
+    messages = []
+    if permissions["can_read"]:
+        messages = (
+            Message.query.filter_by(channel_id=channel.id)
+            .order_by(Message.created_at.asc())
+            .limit(200)
+            .all()
+        )
+    return render_template(
+        "chat.html",
+        channel=channel,
+        messages=messages,
+        can_send=permissions["can_send"],
+        can_read=permissions["can_read"],
     )
-    return render_template("chat.html", channel=channel, messages=messages)
 
 
 @bp.route("/profile")
@@ -176,7 +219,17 @@ def mypage():
     if request.method == "POST":
         current.name = request.form.get("name", current.name).strip()
         current.bio = request.form.get("bio", current.bio).strip()
-        current.avatar_url = request.form.get("avatar_url", current.avatar_url).strip()
+        avatar_file = request.files.get("avatar_file")
+        if avatar_file and avatar_file.filename:
+            upload_name = save_upload(
+                avatar_file,
+                current_app.config["UPLOAD_FOLDER"],
+                current_app.config["ALLOWED_EXTENSIONS"],
+            )
+            if not upload_name:
+                flash("지원하지 않는 파일 형식입니다.")
+                return redirect(url_for("views.mypage"))
+            current.avatar_url = upload_name
         db.session.commit()
         flash("프로필이 업데이트되었습니다.")
         return redirect(url_for("views.mypage"))
@@ -246,6 +299,21 @@ def mailbox():
     return render_template("mailbox.html", notifications=notifications)
 
 
+@bp.route("/mailbox/clear", methods=["POST"])
+@login_required
+def clear_mailbox():
+    current = get_current_user()
+    Notification.query.filter_by(user_id=current.id).delete()
+    db.session.commit()
+    flash("알림이 모두 삭제되었습니다.")
+    return redirect(url_for("views.mailbox"))
+
+
+@bp.route("/media/<path:filename>")
+def media(filename):
+    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
+
+
 @bp.route("/admin", methods=["GET", "POST"])
 @admin_required
 def admin():
@@ -303,21 +371,72 @@ def admin():
             slug = request.form.get("slug", "").strip()
             name = request.form.get("name", "").strip()
             description = request.form.get("description", "").strip()
+            priority = int(request.form.get("priority", "0") or 0)
+            default_can_view = request.form.get("default_can_view") == "on"
+            default_can_read = request.form.get("default_can_read") == "on"
+            default_can_send = request.form.get("default_can_send") == "on"
             if slug and name and not Channel.query.filter_by(slug=slug).first():
-                db.session.add(Channel(slug=slug, name=name, description=description))
+                db.session.add(
+                    Channel(
+                        slug=slug,
+                        name=name,
+                        description=description,
+                        priority=priority,
+                        default_can_view=default_can_view,
+                        default_can_read=default_can_read,
+                        default_can_send=default_can_send,
+                    )
+                )
+                db.session.commit()
+        elif action == "channel_update":
+            channel_id = request.form.get("channel_id")
+            channel = Channel.query.get(channel_id)
+            if channel:
+                new_slug = request.form.get("slug", channel.slug).strip()
+                if new_slug and new_slug != channel.slug:
+                    if Channel.query.filter_by(slug=new_slug).first():
+                        flash("이미 사용 중인 채널 ID입니다.")
+                        return redirect(url_for("views.admin"))
+                    channel.slug = new_slug
+                channel.name = request.form.get("name", channel.name).strip()
+                channel.description = request.form.get(
+                    "description", channel.description
+                ).strip()
+                channel.priority = int(request.form.get("priority", channel.priority) or 0)
+                channel.default_can_view = (
+                    request.form.get("default_can_view") == "on"
+                )
+                channel.default_can_read = (
+                    request.form.get("default_can_read") == "on"
+                )
+                channel.default_can_send = (
+                    request.form.get("default_can_send") == "on"
+                )
                 db.session.commit()
         elif action == "channel_delete":
             channel_id = request.form.get("channel_id")
             channel = Channel.query.get(channel_id)
             if channel:
                 Message.query.filter_by(channel_id=channel.id).delete()
+                ChannelPermission.query.filter_by(channel_id=channel.id).delete()
                 db.session.delete(channel)
                 db.session.commit()
         elif action == "shop_item_create":
             name = request.form.get("name", "").strip()
             kc_cost = int(request.form.get("kc_cost", "0") or 0)
             description = request.form.get("description", "").strip()
-            image_url = request.form.get("image_url", "").strip() or "/static/images/shop-default.svg"
+            image_file = request.files.get("image_file")
+            upload_name = None
+            if image_file and image_file.filename:
+                upload_name = save_upload(
+                    image_file,
+                    current_app.config["UPLOAD_FOLDER"],
+                    current_app.config["ALLOWED_EXTENSIONS"],
+                )
+                if not upload_name:
+                    flash("지원하지 않는 이미지 형식입니다.")
+                    return redirect(url_for("views.admin"))
+            image_url = upload_name or "/static/images/shop-default.svg"
             quantity = request.form.get("quantity")
             priority = int(request.form.get("priority", "0") or 0)
             quantity_value = int(quantity) if quantity else None
@@ -339,6 +458,31 @@ def admin():
             if item:
                 db.session.delete(item)
                 db.session.commit()
+        elif action == "channel_permission_upsert":
+            channel_id = request.form.get("channel_id")
+            user_id = request.form.get("user_id")
+            channel = Channel.query.get(channel_id)
+            user = User.query.get(user_id)
+            if channel and user:
+                permission = ChannelPermission.query.filter_by(
+                    channel_id=channel.id, user_id=user.id
+                ).first()
+                if not permission:
+                    permission = ChannelPermission(
+                        channel_id=channel.id,
+                        user_id=user.id,
+                    )
+                    db.session.add(permission)
+                permission.can_view = request.form.get("can_view") == "on"
+                permission.can_read = request.form.get("can_read") == "on"
+                permission.can_send = request.form.get("can_send") == "on"
+                db.session.commit()
+        elif action == "channel_permission_delete":
+            perm_id = request.form.get("permission_id")
+            permission = ChannelPermission.query.get(perm_id)
+            if permission:
+                db.session.delete(permission)
+                db.session.commit()
         elif action == "user_delete":
             prefix = request.form.get("target")
             target = User.query.filter_by(email_prefix=prefix).first()
@@ -346,6 +490,7 @@ def admin():
                 Message.query.filter_by(user_id=target.id).delete()
                 Follow.query.filter_by(follower_id=target.id).delete()
                 Follow.query.filter_by(followed_id=target.id).delete()
+                ChannelPermission.query.filter_by(user_id=target.id).delete()
                 Notification.query.filter_by(user_id=target.id).delete()
                 KCLog.query.filter_by(user_id=target.id).delete()
                 db.session.delete(target)
@@ -361,14 +506,18 @@ def admin():
         .all()
     )
     items = ShopItem.query.order_by(ShopItem.priority.desc(), ShopItem.name.asc()).all()
-    channels = Channel.query.order_by(Channel.name.asc()).all()
+    channels = Channel.query.order_by(Channel.priority.desc(), Channel.name.asc()).all()
     users = User.query.order_by(User.created_at.desc()).all()
+    channel_permissions = ChannelPermission.query.order_by(
+        ChannelPermission.created_at.desc()
+    ).all()
     return render_template(
         "admin.html",
         stats=stats,
         shop_requests=shop_requests,
         items=items,
         channels=channels,
+        channel_permissions=channel_permissions,
         users=users,
     )
 

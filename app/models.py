@@ -45,7 +45,25 @@ class Channel(db.Model):
     slug = db.Column(db.String(80), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(255), default="")
+    priority = db.Column(db.Integer, default=0)
+    default_can_view = db.Column(db.Boolean, default=True)
+    default_can_read = db.Column(db.Boolean, default=True)
+    default_can_send = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ChannelPermission(db.Model):
+    __tablename__ = "channel_permissions"
+    id = db.Column(db.Integer, primary_key=True)
+    channel_id = db.Column(db.Integer, db.ForeignKey("channels.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    can_view = db.Column(db.Boolean, default=True)
+    can_read = db.Column(db.Boolean, default=True)
+    can_send = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    channel = db.relationship("Channel")
+    user = db.relationship("User")
 
 
 class Message(db.Model):

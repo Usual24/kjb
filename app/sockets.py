@@ -3,7 +3,7 @@ from flask import session
 from flask_socketio import join_room, leave_room, emit
 from .extensions import db
 from .models import Message, Channel, User, KCLog, Notification
-from .utils import adjust_kc, to_kst
+from .utils import adjust_kc, to_kst, resolve_channel_permissions, media_url
 
 
 online_users = set()
@@ -34,8 +34,16 @@ def register_socket_handlers(socketio):
 
     @socketio.on("join")
     def handle_join(data):
+        user = _current_user()
+        if not user:
+            return
         channel_slug = data.get("channel")
         if not channel_slug:
+            return
+        channel = Channel.query.filter_by(slug=channel_slug).first()
+        if not channel:
+            return
+        if not resolve_channel_permissions(user, channel)["can_view"]:
             return
         join_room(channel_slug)
 
@@ -58,6 +66,8 @@ def register_socket_handlers(socketio):
             return
         channel = Channel.query.filter_by(slug=channel_slug).first()
         if not channel:
+            return
+        if not resolve_channel_permissions(user, channel)["can_send"]:
             return
         message = Message(
             channel_id=channel.id,
@@ -116,7 +126,7 @@ def serialize_message(message):
         "user_id": message.user_id,
         "user_name": message.user.name,
         "user_prefix": message.user.email_prefix,
-        "avatar": message.user.avatar_url,
+        "avatar": media_url(message.user.avatar_url),
         "content": message.content,
         "reply_to": message.reply_to.content if message.reply_to else None,
         "is_deleted": message.is_deleted,
@@ -132,7 +142,7 @@ def _online_payload():
             "id": user.id,
             "name": user.name,
             "email_prefix": user.email_prefix,
-            "avatar": user.avatar_url,
+            "avatar": media_url(user.avatar_url),
         }
         for user in users
     ]
