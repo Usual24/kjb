@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="form-page">
+  <div class="form-card">
+    <h2>내 프로필 편집</h2>
+    <form method="post">
+      <label>이름</label>
+      <input type="text" name="name" value="{{ profile_user.name }}">
+      <label>프로필 사진 URL</label>
+      <input type="text" name="avatar_url" value="{{ profile_user.avatar_url }}">
+      <label>소개</label>
+      <textarea name="bio" rows="4">{{ profile_user.bio }}</textarea>
+      <button class="btn primary" type="submit">저장</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

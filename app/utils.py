@@ -1,54 +1,60 @@
-"""Shared helpers for permissions and data utilities."""
-from flask import abort
-from flask_jwt_extended import get_jwt_identity
-from .models import User, ChannelPermission, ChannelMember, Role
-from .extensions import db
+from functools import wraps
+from datetime import timedelta
+from flask import session, redirect, url_for, g, current_app
+from .models import User
+
+
+def init_session(app):
+    app.permanent_session_lifetime = timedelta(days=30)
 
 
 def get_current_user():
-    user_id = get_jwt_identity()
+    if hasattr(g, "current_user"):
+        return g.current_user
+    user_id = session.get("user_id")
     if not user_id:
-        abort(401)
-    user = User.query.get(user_id)
-    if not user:
-        abort(401)
-    return user
+        g.current_user = None
+        return None
+    g.current_user = User.query.get(user_id)
+    return g.current_user
 
 
-def require_role(user, role_name):
-    if not user.has_role(role_name):
-        abort(403)
+def login_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not get_current_user():
+            return redirect(url_for("views.signin"))
+        return view(*args, **kwargs)
+
+    return wrapper
 
 
-def ensure_member(channel_id, user_id):
-    membership = ChannelMember.query.filter_by(channel_id=channel_id, user_id=user_id).first()
-    if not membership:
-        abort(403)
-    return membership
+def admin_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return redirect(url_for("views.index"))
+        return view(*args, **kwargs)
+
+    return wrapper
 
 
-def ensure_channel_permission(channel_id, user, action):
-    if user.has_role("admin"):
-        return True
-    permission = ChannelPermission.query.filter(
-        ChannelPermission.channel_id == channel_id,
-        ((ChannelPermission.user_id == user.id) | (ChannelPermission.role_id.in_([r.id for r in user.roles])))
-    ).first()
-    if not permission:
-        abort(403)
-    if action == "read" and not permission.can_read:
-        abort(403)
-    if action == "write" and not permission.can_write:
-        abort(403)
-    if action == "admin" and not permission.can_admin:
-        abort(403)
-    return True
+def set_login(user, remember=False):
+    session["user_id"] = user.id
+    session.permanent = bool(remember)
 
 
-def get_or_create_role(name):
-    role = Role.query.filter_by(name=name).first()
-    if not role:
-        role = Role(name=name)
-        db.session.add(role)
-        db.session.commit()
-    return role
+def logout_user():
+    session.clear()
+
+
+def notify(user_id, title, body, db, Notification):
+    notification = Notification(user_id=user_id, title=title, body=body)
+    db.session.add(notification)
+
+
+def adjust_kc(user, delta, reason, db, KCLog, Notification):
+    user.kc_points += delta
+    db.session.add(KCLog(user_id=user.id, delta=delta, reason=reason))
+    notify(user.id, "KC 변동", f"{reason} ({delta:+d} KC)", db, Notification)

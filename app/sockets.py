@@ -1,71 +1,141 @@
-"""Socket.IO handlers for real-time chat, calls, and notifications."""
-from flask import request
+from datetime import datetime
+from flask import session
 from flask_socketio import join_room, leave_room, emit
 from .extensions import db
-from .models import Message, User, Notification
+from .models import Message, Channel, User, KCLog, Notification
+from .utils import adjust_kc
+
+
+online_users = set()
+
+
+def _current_user():
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    return User.query.get(user_id)
 
 
 def register_socket_handlers(socketio):
     @socketio.on("connect")
     def handle_connect():
-        user_id = request.args.get("user_id")
-        if user_id:
-            user = User.query.get(int(user_id))
-            if user:
-                user.is_online = True
-                db.session.commit()
-                emit("presence", {"user_id": user.id, "is_online": True}, broadcast=True)
+        user = _current_user()
+        if not user:
+            return False
+        online_users.add(user.id)
+        emit("online_update", _online_payload(), broadcast=True)
 
     @socketio.on("disconnect")
     def handle_disconnect():
-        user_id = request.args.get("user_id")
-        if user_id:
-            user = User.query.get(int(user_id))
-            if user:
-                user.is_online = False
-                db.session.commit()
-                emit("presence", {"user_id": user.id, "is_online": False}, broadcast=True)
+        user = _current_user()
+        if user and user.id in online_users:
+            online_users.discard(user.id)
+            emit("online_update", _online_payload(), broadcast=True)
 
     @socketio.on("join")
     def handle_join(data):
-        join_room(data.get("room"))
+        channel_slug = data.get("channel")
+        if not channel_slug:
+            return
+        join_room(channel_slug)
 
     @socketio.on("leave")
     def handle_leave(data):
-        leave_room(data.get("room"))
+        channel_slug = data.get("channel")
+        if not channel_slug:
+            return
+        leave_room(channel_slug)
 
-    @socketio.on("chat")
-    def handle_chat(data):
+    @socketio.on("send_message")
+    def handle_send_message(data):
+        user = _current_user()
+        if not user:
+            return
+        channel_slug = data.get("channel")
+        content = (data.get("content") or "").strip()
+        reply_to_id = data.get("reply_to")
+        if not channel_slug or not content:
+            return
+        channel = Channel.query.filter_by(slug=channel_slug).first()
+        if not channel:
+            return
         message = Message(
-            channel_id=data.get("channel_id"),
-            sender_id=data.get("sender_id"),
-            content=data.get("content"),
+            channel_id=channel.id,
+            user_id=user.id,
+            content=content,
+            reply_to_id=reply_to_id,
         )
         db.session.add(message)
+        adjust_kc(user, 1, "채팅 보상", db, KCLog, Notification)
         db.session.commit()
-        emit("chat", {
-            "id": message.id,
-            "channel_id": message.channel_id,
-            "sender_id": message.sender_id,
-            "content": message.content,
-            "created_at": message.created_at.isoformat(),
-        }, room=f"channel-{message.channel_id}")
+        payload = serialize_message(message)
+        emit("new_message", payload, room=channel_slug)
 
-    @socketio.on("notify")
-    def handle_notify(data):
-        notification = Notification(
-            user_id=data.get("user_id"),
-            kind=data.get("kind"),
-            payload=data.get("payload") or {},
-        )
-        db.session.add(notification)
+    @socketio.on("edit_message")
+    def handle_edit_message(data):
+        user = _current_user()
+        if not user:
+            return
+        message_id = data.get("message_id")
+        content = (data.get("content") or "").strip()
+        if not message_id or not content:
+            return
+        message = Message.query.get(message_id)
+        if not message or message.is_deleted:
+            return
+        if message.user_id != user.id:
+            return
+        message.content = content
+        message.updated_at = datetime.utcnow()
         db.session.commit()
-        emit("notify", {
-            "id": notification.id,
-            "kind": notification.kind,
-            "payload": notification.payload,
-        }, room=f"user-{notification.user_id}")
+        emit("message_updated", serialize_message(message), room=_channel_slug(message))
 
-    @socketio.on("call-signal")
-    def handle_call_signal(data):
-        emit("call-signal", data, room=data.get("room"))
+    @socketio.on("delete_message")
+    def handle_delete_message(data):
+        user = _current_user()
+        if not user:
+            return
+        message_id = data.get("message_id")
+        message = Message.query.get(message_id)
+        if not message:
+            return
+        if message.user_id != user.id and not user.is_admin:
+            return
+        message.is_deleted = True
+        message.content = "[삭제됨]"
+        db.session.commit()
+        emit("message_deleted", {"message_id": message.id}, room=_channel_slug(message))
+
+
+def serialize_message(message):
+    return {
+        "id": message.id,
+        "channel_id": message.channel_id,
+        "user_id": message.user_id,
+        "user_name": message.user.name,
+        "user_prefix": message.user.email_prefix,
+        "avatar": message.user.avatar_url,
+        "content": message.content,
+        "reply_to": message.reply_to.content if message.reply_to else None,
+        "is_deleted": message.is_deleted,
+        "created_at": message.created_at.strftime("%Y-%m-%d %H:%M"),
+        "updated_at": message.updated_at.strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def _online_payload():
+    users = User.query.filter(User.id.in_(online_users)).all() if online_users else []
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email_prefix": user.email_prefix,
+            "avatar": user.avatar_url,
+        }
+        for user in users
+    ]
+
+
+def _channel_slug(message):
+    channel = Channel.query.get(message.channel_id)
+    return channel.slug if channel else "general"

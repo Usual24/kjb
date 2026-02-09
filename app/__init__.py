@@ -1,8 +1,10 @@
-"""Application factory for 공작방(KJB)."""
+"""Application factory for KJB chat community."""
 from flask import Flask
-from .extensions import db, jwt, migrate, socketio
-from .routes import auth, users, channels, boards, notifications, media, views
+from .extensions import db, migrate, socketio
+from .routes import views
 from .sockets import register_socket_handlers
+from .utils import init_session, get_current_user
+from .models import Channel
 
 
 def create_app(config_object="config.Config"):
@@ -10,17 +12,24 @@ def create_app(config_object="config.Config"):
     app.config.from_object(config_object)
 
     db.init_app(app)
-    jwt.init_app(app)
     migrate.init_app(app, db)
     socketio.init_app(app)
+    init_session(app)
 
-    app.register_blueprint(auth.bp)
-    app.register_blueprint(users.bp)
-    app.register_blueprint(channels.bp)
-    app.register_blueprint(boards.bp)
-    app.register_blueprint(notifications.bp)
-    app.register_blueprint(media.bp)
     app.register_blueprint(views.bp)
+
+    @app.context_processor
+    def inject_globals():
+        return {
+            "current_user": get_current_user(),
+            "channels": Channel.query.order_by(Channel.name.asc()).all(),
+        }
+
+    with app.app_context():
+        db.create_all()
+        if not Channel.query.first():
+            db.session.add(Channel(slug="general", name="# general", description="기본 채널"))
+            db.session.commit()
 
     register_socket_handlers(socketio)
 

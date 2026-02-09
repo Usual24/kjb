@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="mailbox">
+  <h2>내 알림</h2>
+  <div class="mail-list">
+    {% for note in notifications %}
+      <div class="mail-item">
+        <div>
+          <strong>{{ note.title }}</strong>
+          <p>{{ note.body }}</p>
+        </div>
+        <span>{{ note.created_at|datetime }}</span>
+      </div>
+    {% else %}
+      <p class="empty">알림이 없습니다.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
