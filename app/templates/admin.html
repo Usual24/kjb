@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="admin">
+  <h2>관리자 대시보드</h2>
+  <div class="admin-grid">
+    <div class="admin-card">
+      <h3>통계</h3>
+      <p>현재 유저수: {{ stats.user_count }}</p>
+      <p>채널 수: {{ stats.channel_count }}</p>
+      <p>온라인 유저수: {{ stats.online_count }}</p>
+    </div>
+    <div class="admin-card">
+      <h3>KC 관리</h3>
+      <form method="post">
+        <input type="hidden" name="action" value="kc_adjust">
+        <label>대상 이메일 앞부분</label>
+        <input type="text" name="target" required>
+        <label>KC 변동 (+/-)</label>
+        <input type="number" name="delta" required>
+        <button class="btn primary" type="submit">조정</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <h3>상점 요청 큐</h3>
+    {% for req in shop_requests %}
+      <div class="admin-row">
+        <span>{{ req.user.name }} → {{ req.item.name }} ({{ req.item.kc_cost }} KC)</span>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="shop_decision">
+          <input type="hidden" name="request_id" value="{{ req.id }}">
+          <button class="btn success" name="decision" value="approve">승인</button>
+          <button class="btn danger" name="decision" value="deny">거절</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">대기 중인 요청이 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>채널 관리</h3>
+    <form method="post" class="admin-form">
+      <input type="hidden" name="action" value="channel_create">
+      <input type="text" name="slug" placeholder="영문 채널 ID" required>
+      <input type="text" name="name" placeholder="표시 이름" required>
+      <input type="text" name="description" placeholder="설명">
+      <button class="btn primary" type="submit">채널 추가</button>
+    </form>
+    {% for channel in channels %}
+      <div class="admin-row">
+        <span>{{ channel.slug }} - {{ channel.name }}</span>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="channel_delete">
+          <input type="hidden" name="channel_id" value="{{ channel.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>상점 품목 관리</h3>
+    <form method="post" class="admin-form">
+      <input type="hidden" name="action" value="shop_item_create">
+      <input type="text" name="name" placeholder="상품명" required>
+      <input type="text" name="description" placeholder="설명">
+      <input type="number" name="kc_cost" placeholder="KC" required>
+      <input type="text" name="image_url" placeholder="이미지 URL">
+      <input type="number" name="quantity" placeholder="수량 (비우면 무제한)">
+      <input type="number" name="priority" placeholder="우선순위">
+      <button class="btn primary" type="submit">등록</button>
+    </form>
+    {% for item in items %}
+      <div class="admin-row">
+        <span>{{ item.name }} ({{ item.kc_cost }} KC)</span>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="shop_item_delete">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>사용자 관리</h3>
+    {% for user in users %}
+      <div class="admin-row">
+        <span>{{ user.name }} ({{ user.email_prefix }})</span>
+        {% if not user.is_admin %}
+          <form method="post" class="inline">
+            <input type="hidden" name="action" value="user_delete">
+            <input type="hidden" name="target" value="{{ user.email_prefix }}">
+            <button class="btn danger" type="submit">삭제</button>
+          </form>
+        {% else %}
+          <span class="badge">ADMIN</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

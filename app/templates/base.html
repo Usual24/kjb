@@ -1,45 +1,52 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>공작방(KJB)</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap"
-    rel="stylesheet"
-  />
-  <link rel="stylesheet" href="/static/css/styles.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KJB</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="theme-dark">
-  <a class="skip-link" href="#main-content">본문 바로가기</a>
-  <div class="layout">
-    <aside class="sidebar-left">
-      <div class="logo">공작방(KJB)</div>
-      <nav>
-        <a href="/channel">채널</a>
-        <a href="/board">게시판</a>
-        <a href="/login">로그인</a>
-        <a href="/register">회원가입</a>
-      </nav>
-    </aside>
-    <main class="content" id="main-content">
-      {% block content %}{% endblock %}
-    </main>
-    <aside class="sidebar-right">
-      <div class="panel-title">온라인</div>
-      <ul id="online-users"></ul>
-      <p id="online-empty" class="muted">현재 온라인 유저가 없습니다.</p>
-    </aside>
-  </div>
-  <nav class="mobile-nav" aria-label="주요 메뉴">
-    <a href="/">홈</a>
-    <a href="/channel">채널</a>
-    <a href="/board">게시판</a>
-    <a href="/login">로그인</a>
-  </nav>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="/static/js/app.js"></script>
+<body>
+  <header class="topbar">
+    <div class="logo">KJB</div>
+    {% if current_user %}
+    <nav class="nav-links">
+      <a href="/chat">채팅</a>
+      <a href="/sendkc">송금</a>
+      <a href="/shop">상점</a>
+      <a href="/mailbox">알림</a>
+      <a href="/mypage">마이페이지</a>
+      {% if current_user.is_admin %}
+      <a href="/admin">관리자</a>
+      {% endif %}
+      <a href="/logout">로그아웃</a>
+    </nav>
+    <div class="user-pill">
+      <img src="{{ current_user.avatar_url }}" alt="avatar">
+      <span>{{ current_user.name }}</span>
+      <span class="kc">KC {{ current_user.kc_points }}</span>
+    </div>
+    {% else %}
+    <nav class="nav-links">
+      <a href="/signin">로그인</a>
+      <a href="/signup">회원가입</a>
+    </nav>
+    {% endif %}
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-wrapper">
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
 </body>
 </html>
