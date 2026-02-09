@@ -19,6 +19,7 @@ from ..utils import (
     get_current_user,
     notify,
     adjust_kc,
+    to_kst,
 )
 from ..sockets import online_users
 
@@ -376,4 +377,4 @@ def admin():
 def format_datetime(value):
     if not value:
         return ""
-    return value.strftime("%Y-%m-%d %H:%M")
+    return to_kst(value).strftime("%Y-%m-%d %H:%M")
