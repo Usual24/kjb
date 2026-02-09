@@ -35,10 +35,30 @@ a {
   border-bottom: 1px solid #2f2d4a;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .logo {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 2px;
+}
+
+.menu-toggle {
+  display: none;
+  border: none;
+  background: var(--panel-alt);
+  color: var(--text);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
 }
 
 .nav-links {
@@ -74,6 +94,76 @@ a {
 .user-pill .kc {
   color: var(--accent-light);
   font-weight: 600;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 40;
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  max-width: 80%;
+  height: 100%;
+  background: var(--panel);
+  border-right: 1px solid #2f2d4a;
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2f2d4a;
+  font-weight: 600;
+}
+
+.drawer-close {
+  border: none;
+  background: var(--panel-alt);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.drawer-content {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.drawer-nav {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drawer-user {
+  width: 100%;
+  justify-content: space-between;
 }
 
 .flash-wrapper {
@@ -574,18 +664,18 @@ textarea {
 
 @media (max-width: 768px) {
   .topbar {
-    flex-direction: column;
-    gap: 12px;
-    align-items: flex-start;
+    flex-direction: row;
+    gap: 16px;
+    align-items: center;
   }
 
-  .nav-links {
-    flex-wrap: wrap;
+  .menu-toggle {
+    display: inline-flex;
   }
 
-  .user-pill {
-    width: 100%;
-    justify-content: space-between;
+  .desktop-nav,
+  .desktop-user {
+    display: none;
   }
 
   .chat-input {
