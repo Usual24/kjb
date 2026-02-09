@@ -2,11 +2,21 @@
 {% block content %}
 <section class="panel">
   <h2>게시판</h2>
-  <div id="board-posts" class="board-list"></div>
+  <p class="muted">중요한 공지와 대화를 게시판에 기록하세요.</p>
+  <div id="board-posts" class="board-list">
+    <p class="empty-state">아직 등록된 게시글이 없습니다.</p>
+  </div>
   <form id="post-form" class="board-form">
-    <input type="text" name="title" placeholder="제목" />
-    <textarea name="body" placeholder="내용"></textarea>
+    <label class="field">
+      <span>제목</span>
+      <input type="text" name="title" placeholder="제목을 입력하세요" />
+    </label>
+    <label class="field">
+      <span>내용</span>
+      <textarea name="body" placeholder="내용을 입력하세요"></textarea>
+    </label>
     <button class="btn" type="submit">작성</button>
+    <p class="form-status" data-role="board-status" aria-live="polite"></p>
   </form>
 </section>
 {% endblock %}

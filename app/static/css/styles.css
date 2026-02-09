@@ -4,6 +4,8 @@
   --bg-alt: #151a23;
   --text: #e6e9ef;
   --accent: #7c5cff;
+  --accent-soft: rgba(124, 92, 255, 0.18);
+  --muted: #a5acc3;
 }
 
 body {
@@ -11,6 +13,22 @@ body {
   font-family: "Noto Sans KR", sans-serif;
   background: var(--bg);
   color: var(--text);
+}
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 12px;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  z-index: 10;
+}
+
+.skip-link:focus {
+  left: 12px;
 }
 
 .layout {
@@ -37,18 +55,94 @@ nav a {
   padding: 8px 0;
 }
 
+#online-users {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+#online-users li {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-left nav a + a {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .content {
   padding: 24px;
 }
 
 .hero {
-  max-width: 480px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 32px;
+  align-items: start;
 }
 
 .actions {
   display: flex;
   gap: 12px;
   margin-top: 16px;
+}
+
+.hero-copy h1 {
+  margin: 8px 0 12px;
+  font-size: 2.4rem;
+}
+
+.eyebrow {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.hero-meta {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hero-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hero-card {
+  background: #111622;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(124, 92, 255, 0.2);
+}
+
+.hero-card ol {
+  padding-left: 20px;
+  margin: 12px 0 20px;
+  color: var(--muted);
+}
+
+.feature-grid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.feature-card {
+  background: #111622;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .btn {
@@ -59,11 +153,25 @@ nav a {
   border-radius: 8px;
   cursor: pointer;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .btn.ghost {
   background: transparent;
   border: 1px solid var(--accent);
+}
+
+.btn.subtle {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .panel {
@@ -72,6 +180,12 @@ nav a {
   padding: 20px;
   display: grid;
   gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.95rem;
 }
 
 input,
@@ -84,12 +198,45 @@ textarea {
   color: var(--text);
 }
 
+.form-status {
+  min-height: 20px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.form-status.error {
+  color: #ff8d8d;
+}
+
+.form-status.success {
+  color: #7bffbf;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+.empty-state {
+  margin: 0;
+  color: var(--muted);
+}
+
+.chat-form,
+.board-form {
+  display: grid;
+  gap: 10px;
+}
+
 .chat-log {
   min-height: 240px;
   border: 1px solid #2a3245;
   border-radius: 8px;
   padding: 12px;
   background: #0f1320;
+  display: grid;
+  gap: 6px;
 }
 
 .board-list {
@@ -100,6 +247,26 @@ textarea {
   background: #0f1320;
 }
 
+.panel-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.mobile-nav {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
@@ -107,5 +274,33 @@ textarea {
   .sidebar-left,
   .sidebar-right {
     display: none;
+  }
+
+  .content {
+    padding-bottom: 80px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #111622;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 10px 8px;
+    gap: 6px;
+  }
+
+  .mobile-nav a {
+    text-align: center;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.85rem;
   }
 }
