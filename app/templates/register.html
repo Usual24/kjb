@@ -2,11 +2,22 @@
 {% block content %}
 <section class="panel">
   <h2>회원가입</h2>
+  <p class="muted">필수 정보만 입력하면 바로 시작할 수 있습니다.</p>
   <form id="register-form">
-    <input type="email" name="email" placeholder="이메일" required />
-    <input type="text" name="nickname" placeholder="닉네임" required />
-    <input type="password" name="password" placeholder="비밀번호" required />
+    <label class="field">
+      <span>이메일</span>
+      <input type="email" name="email" placeholder="you@example.com" required />
+    </label>
+    <label class="field">
+      <span>닉네임</span>
+      <input type="text" name="nickname" placeholder="표시 이름" required />
+    </label>
+    <label class="field">
+      <span>비밀번호</span>
+      <input type="password" name="password" placeholder="8자 이상 권장" required />
+    </label>
     <button class="btn" type="submit">가입</button>
+    <p class="form-status" data-role="register-status" aria-live="polite"></p>
   </form>
 </section>
 {% endblock %}

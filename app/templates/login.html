@@ -2,10 +2,18 @@
 {% block content %}
 <section class="panel">
   <h2>로그인</h2>
+  <p class="muted">공작방 서비스를 이용하려면 로그인하세요.</p>
   <form id="login-form">
-    <input type="email" name="email" placeholder="이메일" required />
-    <input type="password" name="password" placeholder="비밀번호" required />
+    <label class="field">
+      <span>이메일</span>
+      <input type="email" name="email" placeholder="you@example.com" required />
+    </label>
+    <label class="field">
+      <span>비밀번호</span>
+      <input type="password" name="password" placeholder="비밀번호 입력" required />
+    </label>
     <button class="btn" type="submit">로그인</button>
+    <p class="form-status" data-role="login-status" aria-live="polite"></p>
   </form>
 </section>
 {% endblock %}
