@@ -32,6 +32,7 @@ from ..utils import (
     to_kst,
     save_upload,
     resolve_channel_permissions,
+    parse_int,
 )
 from ..sockets import online_users
 
@@ -265,7 +266,10 @@ def sendkc():
     current = get_current_user()
     if request.method == "POST":
         recipient_prefix = request.form.get("recipient", "").strip()
-        amount = int(request.form.get("amount", "0") or 0)
+        amount = parse_int(request.form.get("amount"))
+        if amount is None:
+            flash("올바른 KC를 입력해주세요.")
+            return redirect(url_for("views.sendkc"))
         if amount <= 0:
             flash("올바른 KC를 입력해주세요.")
             return redirect(url_for("views.sendkc"))
@@ -322,7 +326,10 @@ def admin():
         action = request.form.get("action")
         if action == "kc_adjust":
             target_prefix = request.form.get("target")
-            delta = int(request.form.get("delta", "0") or 0)
+            delta = parse_int(request.form.get("delta"))
+            if delta is None:
+                flash("올바른 KC 값을 입력해주세요.")
+                return redirect(url_for("views.admin"))
             target = User.query.filter_by(email_prefix=target_prefix).first()
             if target and delta != 0:
                 adjust_kc(target, delta, "관리자 조정", db, KCLog, Notification)
@@ -371,7 +378,7 @@ def admin():
             slug = request.form.get("slug", "").strip()
             name = request.form.get("name", "").strip()
             description = request.form.get("description", "").strip()
-            priority = int(request.form.get("priority", "0") or 0)
+            priority = parse_int(request.form.get("priority")) or 0
             default_can_view = request.form.get("default_can_view") == "on"
             default_can_read = request.form.get("default_can_read") == "on"
             default_can_send = request.form.get("default_can_send") == "on"
@@ -402,7 +409,7 @@ def admin():
                 channel.description = request.form.get(
                     "description", channel.description
                 ).strip()
-                channel.priority = int(request.form.get("priority", channel.priority) or 0)
+                channel.priority = parse_int(request.form.get("priority")) or channel.priority
                 channel.default_can_view = (
                     request.form.get("default_can_view") == "on"
                 )
@@ -423,7 +430,10 @@ def admin():
                 db.session.commit()
         elif action == "shop_item_create":
             name = request.form.get("name", "").strip()
-            kc_cost = int(request.form.get("kc_cost", "0") or 0)
+            kc_cost = parse_int(request.form.get("kc_cost"))
+            if kc_cost is None:
+                flash("올바른 KC 값을 입력해주세요.")
+                return redirect(url_for("views.admin"))
             description = request.form.get("description", "").strip()
             image_file = request.files.get("image_file")
             upload_name = None
@@ -438,8 +448,8 @@ def admin():
                     return redirect(url_for("views.admin"))
             image_url = upload_name or "/static/images/shop-default.svg"
             quantity = request.form.get("quantity")
-            priority = int(request.form.get("priority", "0") or 0)
-            quantity_value = int(quantity) if quantity else None
+            priority = parse_int(request.form.get("priority")) or 0
+            quantity_value = parse_int(quantity) if quantity else None
             if name and kc_cost > 0:
                 db.session.add(
                     ShopItem(

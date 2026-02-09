@@ -124,3 +124,12 @@ def resolve_channel_permissions(user, channel):
         permissions["can_read"] = False
         permissions["can_send"] = False
     return permissions
+
+
+def parse_int(value):
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
