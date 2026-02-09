@@ -1,8 +1,11 @@
 from functools import wraps
 from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
+import os
+import uuid
+from werkzeug.utils import secure_filename
 from flask import session, redirect, url_for, g, current_app
-from .models import User
+from .models import User, ChannelPermission
 
 
 def init_session(app):
@@ -67,3 +70,57 @@ def to_kst(value):
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(ZoneInfo("Asia/Seoul"))
+
+
+def allowed_file(filename, allowed_extensions):
+    if "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    return ext in allowed_extensions
+
+
+def save_upload(file_storage, upload_folder, allowed_extensions):
+    if not file_storage or not file_storage.filename:
+        return None
+    filename = secure_filename(file_storage.filename)
+    if not allowed_file(filename, allowed_extensions):
+        return None
+    ext = filename.rsplit(".", 1)[1].lower()
+    new_name = f"{uuid.uuid4().hex}.{ext}"
+    os.makedirs(upload_folder, exist_ok=True)
+    file_storage.save(os.path.join(upload_folder, new_name))
+    return new_name
+
+
+def media_url(value):
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "/")):
+        return value
+    return f"/media/{value}"
+
+
+def resolve_channel_permissions(user, channel):
+    if not user:
+        return {"can_view": False, "can_read": False, "can_send": False}
+    if user.is_admin:
+        return {"can_view": True, "can_read": True, "can_send": True}
+    override = ChannelPermission.query.filter_by(
+        user_id=user.id, channel_id=channel.id
+    ).first()
+    if override:
+        permissions = {
+            "can_view": override.can_view,
+            "can_read": override.can_read,
+            "can_send": override.can_send,
+        }
+    else:
+        permissions = {
+            "can_view": channel.default_can_view,
+            "can_read": channel.default_can_read,
+            "can_send": channel.default_can_send,
+        }
+    if not permissions["can_view"]:
+        permissions["can_read"] = False
+        permissions["can_send"] = False
+    return permissions

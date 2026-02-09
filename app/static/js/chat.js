@@ -1,5 +1,7 @@
 const socket = io();
-const channel = document.querySelector('.chat-main').dataset.channel;
+const chatMain = document.querySelector('.chat-main');
+const channel = chatMain.dataset.channel;
+const canSend = chatMain.dataset.canSend === 'true';
 const messageList = document.getElementById('chatMessages');
 const input = document.getElementById('chatInput');
 const sendButton = document.getElementById('sendButton');
@@ -84,6 +86,7 @@ socket.on('message_deleted', (payload) => {
 });
 
 sendButton.addEventListener('click', () => {
+  if (!canSend) return;
   const content = input.value.trim();
   if (!content) return;
   socket.emit('send_message', { channel, content, reply_to: replyToId });
