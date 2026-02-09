@@ -75,7 +75,7 @@ class Message(db.Model):
     reply_to_id = db.Column(db.Integer, db.ForeignKey("messages.id"))
     is_deleted = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=datetime.utcnow)
 
     user = db.relationship("User", backref="messages")
     reply_to = db.relationship("Message", remote_side=[id])

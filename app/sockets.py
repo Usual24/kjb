@@ -119,7 +119,7 @@ def register_socket_handlers(socketio):
 
 def serialize_message(message):
     created_at = to_kst(message.created_at)
-    updated_at = to_kst(message.updated_at)
+    updated_at = to_kst(message.updated_at) if message.updated_at else None
     return {
         "id": message.id,
         "channel_id": message.channel_id,
@@ -131,7 +131,7 @@ def serialize_message(message):
         "reply_to": message.reply_to.content if message.reply_to else None,
         "is_deleted": message.is_deleted,
         "created_at": created_at.strftime("%Y-%m-%d %H:%M"),
-        "updated_at": updated_at.strftime("%Y-%m-%d %H:%M"),
+        "updated_at": updated_at.strftime("%Y-%m-%d %H:%M") if updated_at else None,
     }
 
 

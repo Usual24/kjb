@@ -33,7 +33,7 @@
               <div class="message-meta">
                 <a href="/profile?usr={{ message.user.email_prefix }}">{{ message.user.name }}</a>
                 <span>{{ message.created_at|datetime }}</span>
-                {% if message.updated_at and message.updated_at != message.created_at %}
+                {% if message.updated_at and (message.updated_at|datetime) != (message.created_at|datetime) %}
                   <span class="edited">수정됨</span>
                 {% endif %}
               </div>
