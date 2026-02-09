@@ -1,18 +1,70 @@
 {% extends "base.html" %}
+
 {% block content %}
-<section class="panel">
-  <h2>텍스트 채널</h2>
-  <p class="muted">채널에 참여해 실시간으로 이야기를 나눠보세요.</p>
-  <div id="chat-log" class="chat-log">
-    <p class="empty-state">아직 메시지가 없습니다. 첫 메시지를 남겨보세요.</p>
-  </div>
-  <form id="chat-form" class="chat-form">
-    <label class="field">
-      <span class="sr-only">메시지</span>
-      <input type="text" name="content" placeholder="메시지 입력..." />
-    </label>
-    <button class="btn" type="submit">전송</button>
-    <p class="form-status" data-role="chat-status" aria-live="polite"></p>
-  </form>
-</section>
+<div class="chat-layout">
+  <aside class="sidebar">
+    <h3>채널</h3>
+    <ul>
+      {% for ch in channels %}
+        <li class="{% if ch.id == channel.id %}active{% endif %}">
+          <a href="/chat?id={{ ch.slug }}">{{ ch.name }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <main class="chat-main" data-channel="{{ channel.slug }}">
+    <div class="chat-header">
+      <div>
+        <h2>{{ channel.name }}</h2>
+        <p>{{ channel.description }}</p>
+      </div>
+    </div>
+    <div id="chatMessages" class="chat-messages">
+      {% for message in messages %}
+        <div class="message" data-message-id="{{ message.id }}" data-user-id="{{ message.user_id }}">
+          <a href="/profile?usr={{ message.user.email_prefix }}" class="avatar-link">
+            <img src="{{ message.user.avatar_url }}" alt="avatar">
+          </a>
+          <div class="message-body">
+            <div class="message-meta">
+              <a href="/profile?usr={{ message.user.email_prefix }}">{{ message.user.name }}</a>
+              <span>{{ message.created_at|datetime }}</span>
+              {% if message.updated_at and message.updated_at != message.created_at %}
+                <span class="edited">수정됨</span>
+              {% endif %}
+            </div>
+            {% if message.reply_to %}
+              <div class="reply-preview">↳ {{ message.reply_to.content }}</div>
+            {% endif %}
+            <div class="message-content">{{ message.content }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    <div id="replyBanner" class="reply-banner hidden"></div>
+    <div class="chat-input">
+      <textarea id="chatInput" placeholder="메시지를 입력하세요..."></textarea>
+      <button class="btn primary" id="sendButton">전송</button>
+    </div>
+  </main>
+
+  <aside class="online">
+    <h3>온라인</h3>
+    <ul id="onlineList"></ul>
+  </aside>
+</div>
+
+<div id="contextMenu" class="context-menu hidden">
+  <button data-action="reply">답장</button>
+  <button data-action="edit">수정</button>
+  <button data-action="delete">삭제</button>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  window.KJB_CURRENT_USER_ID = {{ current_user.id }};
+  window.KJB_IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
+</script>
+<script src="/static/js/chat.js"></script>
 {% endblock %}

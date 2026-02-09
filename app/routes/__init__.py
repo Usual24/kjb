@@ -1,1 +1,3 @@
-"""Route blueprints for API and views."""
+from . import views
+
+__all__ = ["views"]
