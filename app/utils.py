@@ -3,9 +3,14 @@ from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
 import uuid
+import re
+from markupsafe import Markup, escape
 from werkzeug.utils import secure_filename
 from flask import session, redirect, url_for, g, current_app
 from .models import User, ChannelPermission
+
+
+EMOJI_PATTERN = re.compile(r":([a-zA-Z0-9_\-]+):")
 
 
 def init_session(app):
@@ -146,3 +151,25 @@ def parse_int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def render_chat_content(content, emoji_map):
+    if not content:
+        return ""
+    parts = []
+    last_end = 0
+    for match in EMOJI_PATTERN.finditer(content):
+        parts.append(escape(content[last_end : match.start()]))
+        key = match.group(1)
+        emoji_url = emoji_map.get(key)
+        if emoji_url:
+            parts.append(
+                Markup(
+                    f'<img class="inline-emoji" src="{escape(media_url(emoji_url))}" alt=":{escape(key)}:" title=":{escape(key)}:">'
+                )
+            )
+        else:
+            parts.append(escape(match.group(0)))
+        last_end = match.end()
+    parts.append(escape(content[last_end:]))
+    return Markup("".join(str(part) for part in parts))
