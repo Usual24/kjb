@@ -156,6 +156,38 @@ a {
   gap: 16px;
 }
 
+.drawer-section {
+  border-top: 1px solid #2f2d4a;
+  padding-top: 12px;
+}
+
+.drawer-section h3 {
+  margin: 0;
+}
+
+.drawer-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.drawer-section li {
+  margin-bottom: 8px;
+}
+
+.drawer-section li a {
+  padding: 6px 10px;
+  display: block;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.drawer-section li.active a,
+.drawer-section li a:hover {
+  background: var(--panel-alt);
+  color: var(--text);
+}
+
 .drawer-nav {
   flex-direction: column;
   gap: 12px;
@@ -685,6 +717,11 @@ textarea {
 
   .chat-input textarea {
     width: 100%;
+  }
+
+  .sidebar,
+  .online {
+    display: none;
   }
 
   .admin-row {

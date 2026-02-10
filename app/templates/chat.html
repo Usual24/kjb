@@ -1,5 +1,22 @@
 {% extends "base.html" %}
 
+{% block drawer_extra %}
+<div class="drawer-section">
+  <h3>채널</h3>
+  <ul class="drawer-channel-list">
+    {% for ch in channels %}
+      <li class="{% if ch.id == channel.id %}active{% endif %}">
+        <a href="/chat?id={{ ch.slug }}">{{ ch.name }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+<div class="drawer-section">
+  <h3>온라인</h3>
+  <ul data-online-list></ul>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="chat-layout">
   <aside class="sidebar">
@@ -58,7 +75,7 @@
 
   <aside class="online">
     <h3>온라인</h3>
-    <ul id="onlineList"></ul>
+    <ul data-online-list></ul>
   </aside>
 </div>
 

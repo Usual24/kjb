@@ -7,7 +7,7 @@ const input = document.getElementById('chatInput');
 const sendButton = document.getElementById('sendButton');
 const contextMenu = document.getElementById('contextMenu');
 const replyBanner = document.getElementById('replyBanner');
-const onlineList = document.getElementById('onlineList');
+const onlineLists = document.querySelectorAll('[data-online-list]');
 let replyToId = null;
 let contextMessageId = null;
 let contextUserId = null;
@@ -44,17 +44,19 @@ function appendMessage(message) {
 }
 
 function updateOnlineList(users) {
-  onlineList.innerHTML = '';
-  users.forEach(user => {
-    const li = document.createElement('li');
-    li.className = 'online-item';
-    li.innerHTML = `
-      <a href="/profile?usr=${user.email_prefix}">
-        <img src="${user.avatar}" alt="avatar">
-      </a>
-      <a href="/profile?usr=${user.email_prefix}">${user.name}</a>
-    `;
-    onlineList.appendChild(li);
+  onlineLists.forEach((list) => {
+    list.innerHTML = '';
+    users.forEach(user => {
+      const li = document.createElement('li');
+      li.className = 'online-item';
+      li.innerHTML = `
+        <a href="/profile?usr=${user.email_prefix}">
+          <img src="${user.avatar}" alt="avatar">
+        </a>
+        <a href="/profile?usr=${user.email_prefix}">${user.name}</a>
+      `;
+      list.appendChild(li);
+    });
   });
 }
 
