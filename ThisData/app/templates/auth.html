@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>ThisData - 로그인</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<div class="auth-wrap">
+  <h1>ThisData</h1>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}<div class="flash">{{ messages[0] }}</div>{% endif %}
+  {% endwith %}
+  <div class="auth-grid">
+    <form method="post" action="{{ url_for('views.signup') }}">
+      <h2>회원가입</h2>
+      <input name="username" placeholder="username" required>
+      <input name="display_name" placeholder="표시 이름" required>
+      <input type="password" name="password" placeholder="비밀번호" required>
+      <button type="submit">가입</button>
+    </form>
+    <form method="post" action="{{ url_for('views.login') }}">
+      <h2>로그인</h2>
+      <input name="username" placeholder="username" required>
+      <input type="password" name="password" placeholder="비밀번호" required>
+      <button type="submit">로그인</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>ThisData</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<header>
+  <h1>ThisData Community</h1>
+  <div>{{ user.display_name }} (@{{ user.username }})</div>
+  <form method="post" action="{{ url_for('views.logout') }}"><button>로그아웃</button></form>
+</header>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}<div class="flash">{{ messages[0] }}</div>{% endif %}
+{% endwith %}
+<main class="layout">
+  <aside class="panel">
+    <h3>서버</h3>
+    <ul>
+      {% for m in memberships %}
+      <li><a href="{{ url_for('views.index', server=m.server_id) }}">{{ m.server.name }}{% if m.role == 'admin' %} (admin){% endif %}</a></li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="{{ url_for('views.create_server') }}">
+      <input name="name" placeholder="새 서버 이름" required>
+      <label><input type="checkbox" name="is_public" checked> 공개 서버</label>
+      <button>서버 생성</button>
+    </form>
+
+    <h4>공개 서버 둘러보기</h4>
+    {% for s in public_servers %}
+      <form method="post" action="{{ url_for('views.join_public_server', server_id=s.id) }}">
+        <span>{{ s.name }}</span>
+        <button>가입</button>
+      </form>
+    {% endfor %}
+  </aside>
+
+  <section class="panel">
+    <h3>채널</h3>
+    {% if active_membership %}
+      <div>현재 서버: <b>{{ active_membership.server.name }}</b></div>
+      <ul>
+        {% for c in channels %}
+          <li><a href="{{ url_for('views.index', server=active_membership.server_id, channel=c.id) }}"># {{ c.name }}</a></li>
+        {% endfor %}
+      </ul>
+      {% if active_membership.role == 'admin' %}
+      <form method="post" action="{{ url_for('views.create_channel') }}">
+        <input type="hidden" name="server_id" value="{{ active_membership.server_id }}">
+        <input name="name" placeholder="새 채널" required>
+        <button>채널 생성</button>
+      </form>
+      <form method="post" action="{{ url_for('views.create_invite', server_id=active_membership.server_id) }}">
+        <button>초대 링크 생성</button>
+      </form>
+      <form method="post" action="{{ url_for('views.ban_member', server_id=active_membership.server_id) }}">
+        <input name="target_id" type="number" placeholder="밴할 user id" required>
+        <button>유저 밴</button>
+      </form>
+      {% endif %}
+
+      {% if active_channel_id %}
+      <div class="messages">
+        {% for msg in messages %}
+          <div><b>{{ msg.user.display_name if msg.user else ('BOT:' ~ msg.bot.name) }}</b>: {{ msg.content }}</div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('views.send_message') }}">
+        <input type="hidden" name="channel_id" value="{{ active_channel_id }}">
+        <input name="content" placeholder="메시지 보내기" required>
+        <button>전송</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <p>참여한 서버가 없습니다.</p>
+    {% endif %}
+  </section>
+
+  <aside class="panel">
+    <h3>친구 / DM</h3>
+    <small>친구가 되면 DM 가능</small>
+    {% for u in users %}
+      <div>
+        {{ u.display_name }} (id:{{ u.id }})
+        {% if u.id in friend_ids %}
+          <a href="{{ url_for('views.index', dm=u.id) }}">DM</a>
+        {% else %}
+          <form method="post" action="{{ url_for('views.request_friend') }}">
+            <input type="hidden" name="target_id" value="{{ u.id }}">
+            <button>친구 요청</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <h4>받은 요청</h4>
+    {% for req in pending_requests %}
+      <form method="post" action="{{ url_for('views.accept_friend') }}">
+        <input type="hidden" name="friendship_id" value="{{ req.id }}">
+        <button>수락 {{ req.requester.display_name if req.requester else req.requester_id }}</button>
+      </form>
+    {% endfor %}
+
+    {% if dm_target_id %}
+      <h4>DM ({{ dm_target_id }})</h4>
+      <div class="messages">
+        {% for dm in dm_messages %}
+          <div><b>{{ dm.sender.display_name }}</b>: {{ dm.content }}</div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('views.send_dm') }}">
+        <input type="hidden" name="target_id" value="{{ dm_target_id }}">
+        <input name="content" placeholder="DM 보내기" required>
+        <button>전송</button>
+      </form>
+    {% endif %}
+
+    <h3>봇 (API 토큰)</h3>
+    {% for bot in bot_accounts %}
+      <div>{{ bot.name }}<br><code>{{ bot.token }}</code></div>
+    {% endfor %}
+    <form method="post" action="{{ url_for('views.create_bot') }}">
+      <input name="name" placeholder="봇 이름" required>
+      <button>봇 생성</button>
+    </form>
+  </aside>
+</main>
+</body>
+</html>
