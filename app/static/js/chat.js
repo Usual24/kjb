@@ -26,12 +26,13 @@ function renderMessage(message) {
     </a>
     <div class="message-body">
       <div class="message-meta">
-        <a href="/profile?usr=${message.user_prefix}">${message.user_name}</a>
+        <a href="/profile?usr=${message.user_prefix}" ${message.name_color ? `style="color:${message.name_color};"` : ''}>${message.user_name}</a>
+        ${message.accessory_image ? `<img src="${message.accessory_image}" class="name-accessory" alt="accessory">` : ''}
         <span>${message.created_at}</span>
         ${message.updated_at && message.updated_at !== message.created_at ? '<span class="edited">수정됨</span>' : ''}
       </div>
       ${message.reply_to ? `<div class="reply-preview">↳ ${message.reply_to}</div>` : ''}
-      <div class="message-content">${message.content}</div>
+      <div class="message-content">${message.rendered_content || message.content}</div>
     </div>
   `;
   return wrapper;
@@ -54,7 +55,12 @@ function updateOnlineList(users) {
           <img src="${user.avatar}" alt="avatar">
         </a>
         <a href="/profile?usr=${user.email_prefix}">${user.name}</a>
+        ${user.accessory_image ? `<img src="${user.accessory_image}" class="name-accessory" alt="accessory">` : ''}
       `;
+      const nameLink = li.querySelectorAll('a')[1];
+      if (nameLink && user.name_color) {
+        nameLink.style.color = user.name_color;
+      }
       list.appendChild(li);
     });
   });
@@ -72,6 +78,9 @@ socket.on('message_updated', (message) => {
   const element = messageList.querySelector(`[data-message-id="${message.id}"]`);
   if (!element) return;
   element.querySelector('.message-content').textContent = message.content;
+  if (message.rendered_content) {
+    element.querySelector('.message-content').innerHTML = message.rendered_content;
+  }
   const meta = element.querySelector('.message-meta');
   if (!meta.querySelector('.edited')) {
     const edited = document.createElement('span');

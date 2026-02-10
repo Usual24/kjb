@@ -20,6 +20,10 @@ from ..models import (
     ShopItem,
     ShopRequest,
     Follow,
+    Emoji,
+    UserEmojiPermission,
+    Accessory,
+    UserAccessoryPermission,
 )
 from ..utils import (
     login_required,
@@ -35,6 +39,7 @@ from ..utils import (
     parse_int,
 )
 from ..sockets import online_users
+from ..sockets import serialize_message
 
 bp = Blueprint("views", __name__)
 
@@ -149,6 +154,7 @@ def chat():
         flash("접근 가능한 채널이 없습니다.")
         return redirect(url_for("views.index"))
     messages = []
+    serialized_messages = []
     if permissions["can_read"]:
         messages = (
             Message.query.filter_by(channel_id=channel.id)
@@ -156,10 +162,11 @@ def chat():
             .limit(200)
             .all()
         )
+        serialized_messages = [serialize_message(message) for message in messages]
     return render_template(
         "chat.html",
         channel=channel,
-        messages=messages,
+        messages=serialized_messages,
         can_send=permissions["can_send"],
         can_read=permissions["can_read"],
     )
@@ -501,9 +508,123 @@ def admin():
                 Follow.query.filter_by(follower_id=target.id).delete()
                 Follow.query.filter_by(followed_id=target.id).delete()
                 ChannelPermission.query.filter_by(user_id=target.id).delete()
+                UserEmojiPermission.query.filter_by(user_id=target.id).delete()
+                UserAccessoryPermission.query.filter_by(user_id=target.id).delete()
                 Notification.query.filter_by(user_id=target.id).delete()
                 KCLog.query.filter_by(user_id=target.id).delete()
                 db.session.delete(target)
+                db.session.commit()
+        elif action == "emoji_create":
+            name = request.form.get("name", "").strip().lower()
+            image_file = request.files.get("image_file")
+            if not name:
+                flash("이모지 이름을 입력해주세요.")
+                return redirect(url_for("views.admin"))
+            if Emoji.query.filter_by(name=name).first():
+                flash("이미 존재하는 이모지 이름입니다.")
+                return redirect(url_for("views.admin"))
+            if not image_file or not image_file.filename:
+                flash("이모지 이미지를 업로드해주세요.")
+                return redirect(url_for("views.admin"))
+            upload_name = save_upload(
+                image_file,
+                current_app.config["UPLOAD_FOLDER"],
+                current_app.config["ALLOWED_EXTENSIONS"],
+            )
+            if not upload_name:
+                flash("지원하지 않는 이미지 형식입니다.")
+                return redirect(url_for("views.admin"))
+            db.session.add(Emoji(name=name, image_url=upload_name))
+            db.session.commit()
+        elif action == "emoji_delete":
+            emoji_id = request.form.get("emoji_id")
+            emoji = Emoji.query.get(emoji_id)
+            if emoji:
+                db.session.delete(emoji)
+                db.session.commit()
+        elif action == "emoji_permission_upsert":
+            user_id = request.form.get("user_id")
+            emoji_id = request.form.get("emoji_id")
+            user = User.query.get(user_id)
+            emoji = Emoji.query.get(emoji_id)
+            if user and emoji:
+                existing = UserEmojiPermission.query.filter_by(
+                    user_id=user.id, emoji_id=emoji.id
+                ).first()
+                if not existing:
+                    db.session.add(UserEmojiPermission(user_id=user.id, emoji_id=emoji.id))
+                    db.session.commit()
+        elif action == "emoji_permission_delete":
+            permission_id = request.form.get("permission_id")
+            permission = UserEmojiPermission.query.get(permission_id)
+            if permission:
+                db.session.delete(permission)
+                db.session.commit()
+        elif action == "accessory_create":
+            name = request.form.get("name", "").strip()
+            text_color = request.form.get("text_color", "#f7f9ff").strip() or "#f7f9ff"
+            image_file = request.files.get("image_file")
+            if not name:
+                flash("엑세서리 이름을 입력해주세요.")
+                return redirect(url_for("views.admin"))
+            if Accessory.query.filter_by(name=name).first():
+                flash("이미 존재하는 엑세서리 이름입니다.")
+                return redirect(url_for("views.admin"))
+            if not image_file or not image_file.filename:
+                flash("엑세서리 이미지를 업로드해주세요.")
+                return redirect(url_for("views.admin"))
+            upload_name = save_upload(
+                image_file,
+                current_app.config["UPLOAD_FOLDER"],
+                current_app.config["ALLOWED_EXTENSIONS"],
+            )
+            if not upload_name:
+                flash("지원하지 않는 이미지 형식입니다.")
+                return redirect(url_for("views.admin"))
+            db.session.add(Accessory(name=name, image_url=upload_name, text_color=text_color))
+            db.session.commit()
+        elif action == "accessory_delete":
+            accessory_id = request.form.get("accessory_id")
+            accessory = Accessory.query.get(accessory_id)
+            if accessory:
+                db.session.delete(accessory)
+                db.session.commit()
+        elif action == "accessory_permission_upsert":
+            user_id = request.form.get("user_id")
+            accessory_id = request.form.get("accessory_id")
+            set_active = request.form.get("set_active") == "on"
+            user = User.query.get(user_id)
+            accessory = Accessory.query.get(accessory_id)
+            if user and accessory:
+                permission = UserAccessoryPermission.query.filter_by(
+                    user_id=user.id, accessory_id=accessory.id
+                ).first()
+                if not permission:
+                    permission = UserAccessoryPermission(
+                        user_id=user.id,
+                        accessory_id=accessory.id,
+                    )
+                    db.session.add(permission)
+                if set_active:
+                    UserAccessoryPermission.query.filter_by(user_id=user.id).update(
+                        {"is_active": False}
+                    )
+                    permission.is_active = True
+                db.session.commit()
+        elif action == "accessory_permission_activate":
+            permission_id = request.form.get("permission_id")
+            permission = UserAccessoryPermission.query.get(permission_id)
+            if permission:
+                UserAccessoryPermission.query.filter_by(user_id=permission.user_id).update(
+                    {"is_active": False}
+                )
+                permission.is_active = True
+                db.session.commit()
+        elif action == "accessory_permission_delete":
+            permission_id = request.form.get("permission_id")
+            permission = UserAccessoryPermission.query.get(permission_id)
+            if permission:
+                db.session.delete(permission)
                 db.session.commit()
     stats = {
         "user_count": User.query.count(),
@@ -521,6 +642,14 @@ def admin():
     channel_permissions = ChannelPermission.query.order_by(
         ChannelPermission.created_at.desc()
     ).all()
+    emojis = Emoji.query.order_by(Emoji.name.asc()).all()
+    emoji_permissions = UserEmojiPermission.query.order_by(
+        UserEmojiPermission.created_at.desc()
+    ).all()
+    accessories = Accessory.query.order_by(Accessory.created_at.desc()).all()
+    accessory_permissions = UserAccessoryPermission.query.order_by(
+        UserAccessoryPermission.created_at.desc()
+    ).all()
     return render_template(
         "admin.html",
         stats=stats,
@@ -528,6 +657,10 @@ def admin():
         items=items,
         channels=channels,
         channel_permissions=channel_permissions,
+        emojis=emojis,
+        emoji_permissions=emoji_permissions,
+        accessories=accessories,
+        accessory_permissions=accessory_permissions,
         users=users,
     )
 

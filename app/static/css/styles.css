@@ -404,7 +404,7 @@ textarea {
   gap: 12px;
 }
 
-.message img {
+.message .avatar-link img {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -432,6 +432,21 @@ textarea {
 .message-content {
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.inline-emoji {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  vertical-align: text-bottom;
+}
+
+.name-accessory {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .reply-preview {
@@ -680,6 +695,13 @@ textarea {
   width: 24px;
   height: 24px;
   border-radius: 50%;
+}
+
+.emoji-preview {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 @media (max-width: 1024px) {

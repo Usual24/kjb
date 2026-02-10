@@ -168,6 +168,127 @@
   </div>
 
   <div class="admin-section">
+    <h3>이모지 관리</h3>
+    <form method="post" class="admin-form" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="emoji_create">
+      <input type="text" name="name" placeholder="이모지 이름 (예: happy_cat)" required>
+      <input type="file" name="image_file" accept="image/*" required>
+      <button class="btn primary" type="submit">이모지 등록</button>
+    </form>
+    {% for emoji in emojis %}
+      <div class="admin-row">
+        <span>:{{ emoji.name }}:</span>
+        <img src="{{ emoji.image_url|media }}" class="emoji-preview" alt="emoji">
+        <form method="post" class="inline" data-confirm="이모지를 삭제할까요?">
+          <input type="hidden" name="action" value="emoji_delete">
+          <input type="hidden" name="emoji_id" value="{{ emoji.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">등록된 이모지가 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>이모지 권한 관리</h3>
+    <form method="post" class="admin-form">
+      <input type="hidden" name="action" value="emoji_permission_upsert">
+      <select name="user_id" required>
+        <option value="">사용자 선택</option>
+        {% for user in users %}
+          <option value="{{ user.id }}">{{ user.name }} ({{ user.email_prefix }})</option>
+        {% endfor %}
+      </select>
+      <select name="emoji_id" required>
+        <option value="">이모지 선택</option>
+        {% for emoji in emojis %}
+          <option value="{{ emoji.id }}">:{{ emoji.name }}:</option>
+        {% endfor %}
+      </select>
+      <button class="btn primary" type="submit">권한 부여</button>
+    </form>
+    {% for permission in emoji_permissions %}
+      <div class="admin-row">
+        <span>{{ permission.user.name }} → :{{ permission.emoji.name }}:</span>
+        <form method="post" class="inline" data-confirm="권한을 삭제할까요?">
+          <input type="hidden" name="action" value="emoji_permission_delete">
+          <input type="hidden" name="permission_id" value="{{ permission.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">등록된 이모지 권한이 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>엑세서리 관리</h3>
+    <form method="post" class="admin-form" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="accessory_create">
+      <input type="text" name="name" placeholder="엑세서리 이름" required>
+      <input type="color" name="text_color" value="#f7f9ff">
+      <input type="file" name="image_file" accept="image/*" required>
+      <button class="btn primary" type="submit">엑세서리 등록</button>
+    </form>
+    {% for accessory in accessories %}
+      <div class="admin-row">
+        <span style="color: {{ accessory.text_color }};">{{ accessory.name }}</span>
+        <img src="{{ accessory.image_url|media }}" class="name-accessory" alt="accessory">
+        <form method="post" class="inline" data-confirm="엑세서리를 삭제할까요?">
+          <input type="hidden" name="action" value="accessory_delete">
+          <input type="hidden" name="accessory_id" value="{{ accessory.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">등록된 엑세서리가 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
+    <h3>엑세서리 권한 관리</h3>
+    <form method="post" class="admin-form">
+      <input type="hidden" name="action" value="accessory_permission_upsert">
+      <select name="user_id" required>
+        <option value="">사용자 선택</option>
+        {% for user in users %}
+          <option value="{{ user.id }}">{{ user.name }} ({{ user.email_prefix }})</option>
+        {% endfor %}
+      </select>
+      <select name="accessory_id" required>
+        <option value="">엑세서리 선택</option>
+        {% for accessory in accessories %}
+          <option value="{{ accessory.id }}">{{ accessory.name }}</option>
+        {% endfor %}
+      </select>
+      <label class="check">
+        <input type="checkbox" name="set_active" checked>
+        즉시 활성화
+      </label>
+      <button class="btn primary" type="submit">권한 저장</button>
+    </form>
+    {% for permission in accessory_permissions %}
+      <div class="admin-row">
+        <span>{{ permission.user.name }} → {{ permission.accessory.name }}</span>
+        <span class="badge">{% if permission.is_active %}활성{% else %}비활성{% endif %}</span>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="accessory_permission_activate">
+          <input type="hidden" name="permission_id" value="{{ permission.id }}">
+          <button class="btn secondary" type="submit">활성화</button>
+        </form>
+        <form method="post" class="inline" data-confirm="권한을 삭제할까요?">
+          <input type="hidden" name="action" value="accessory_permission_delete">
+          <input type="hidden" name="permission_id" value="{{ permission.id }}">
+          <button class="btn danger" type="submit">삭제</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">등록된 엑세서리 권한이 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <div class="admin-section">
     <h3>사용자 관리</h3>
     {% for user in users %}
       <div class="admin-row">

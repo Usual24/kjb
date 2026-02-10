@@ -43,21 +43,24 @@
       {% else %}
         {% for message in messages %}
           <div class="message" data-message-id="{{ message.id }}" data-user-id="{{ message.user_id }}">
-            <a href="/profile?usr={{ message.user.email_prefix }}" class="avatar-link">
-              <img src="{{ message.user.avatar_url|media }}" alt="avatar">
+            <a href="/profile?usr={{ message.user_prefix }}" class="avatar-link">
+              <img src="{{ message.avatar }}" alt="avatar">
             </a>
             <div class="message-body">
               <div class="message-meta">
-                <a href="/profile?usr={{ message.user.email_prefix }}">{{ message.user.name }}</a>
-                <span>{{ message.created_at|datetime }}</span>
-                {% if message.updated_at and (message.updated_at|datetime) != (message.created_at|datetime) %}
+                <a href="/profile?usr={{ message.user_prefix }}" {% if message.name_color %}style="color: {{ message.name_color }};"{% endif %}>{{ message.user_name }}</a>
+                {% if message.accessory_image %}
+                  <img src="{{ message.accessory_image }}" class="name-accessory" alt="accessory">
+                {% endif %}
+                <span>{{ message.created_at }}</span>
+                {% if message.updated_at and message.updated_at != message.created_at %}
                   <span class="edited">수정됨</span>
                 {% endif %}
               </div>
               {% if message.reply_to %}
-                <div class="reply-preview">↳ {{ message.reply_to.content }}</div>
+                <div class="reply-preview">↳ {{ message.reply_to }}</div>
               {% endif %}
-              <div class="message-content">{{ message.content }}</div>
+              <div class="message-content">{{ message.rendered_content|safe }}</div>
             </div>
           </div>
         {% endfor %}
