@@ -1,6 +1,6 @@
 from functools import wraps
 from datetime import timedelta, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
 import uuid
 from werkzeug.utils import secure_filename
@@ -64,12 +64,25 @@ def adjust_kc(user, delta, reason, db, KCLog, Notification):
     notify(user.id, "KC 변동", f"{reason} ({delta:+d} KC)", db, Notification)
 
 
+_KST_TZ = None
+
+
+def _get_kst_tz():
+    global _KST_TZ
+    if _KST_TZ is None:
+        try:
+            _KST_TZ = ZoneInfo("Asia/Seoul")
+        except ZoneInfoNotFoundError:
+            _KST_TZ = timezone(timedelta(hours=9), name="KST")
+    return _KST_TZ
+
+
 def to_kst(value):
     if not value:
         return None
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(ZoneInfo("Asia/Seoul"))
+    return value.astimezone(_get_kst_tz())
 
 
 def allowed_file(filename, allowed_extensions):
