@@ -1,364 +1,349 @@
-from flask import Blueprint, jsonify, request, g
-from flask_jwt_extended import create_access_token
-from sqlalchemy import or_, and_
+from __future__ import annotations
+
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .extensions import db
-from .auth import auth_required
 from .models import (
-    User,
-    CommunityServer,
-    ServerMembership,
-    ServerChannel,
+    BotAccount,
+    Channel,
     ChannelMessage,
-    InviteLink,
-    ServerBan,
-    Friendship,
-    FriendRequest,
     DirectMessage,
-    BotCredential,
+    Friendship,
+    InviteLink,
+    Server,
+    ServerMember,
+    User,
 )
 
-bp = Blueprint("api", __name__, url_prefix="/api")
+bp = Blueprint("views", __name__)
 
 
-def _membership(server_id: int, user_id: int):
-    return ServerMembership.query.filter_by(server_id=server_id, user_id=user_id).first()
+def current_user() -> User | None:
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    return User.query.get(uid)
 
 
-def _is_admin(server_id: int, user_id: int) -> bool:
-    member = _membership(server_id, user_id)
-    return bool(member and member.role == "admin")
+def require_login() -> User:
+    user = current_user()
+    if not user:
+        abort(401)
+    return user
 
 
-def _is_banned(server_id: int, user_id: int) -> bool:
-    return ServerBan.query.filter_by(server_id=server_id, user_id=user_id).first() is not None
+def get_membership(user_id: int, server_id: int) -> ServerMember | None:
+    return ServerMember.query.filter_by(user_id=user_id, server_id=server_id, is_banned=False).first()
 
 
-@bp.get("/health")
-def health():
-    return jsonify({"community": "ThisData", "status": "ok"})
+@bp.route("/")
+def index():
+    user = current_user()
+    if not user:
+        return render_template("auth.html")
+
+    memberships = (
+        ServerMember.query.filter_by(user_id=user.id, is_banned=False)
+        .join(Server)
+        .order_by(Server.created_at.desc())
+        .all()
+    )
+    public_servers = Server.query.filter_by(is_public=True).order_by(Server.created_at.desc()).all()
+    server_id = request.args.get("server", type=int)
+    active_membership = memberships[0] if memberships else None
+    if server_id:
+        selected = next((m for m in memberships if m.server_id == server_id), None)
+        if selected:
+            active_membership = selected
+
+    channels = []
+    messages = []
+    active_channel_id = request.args.get("channel", type=int)
+    if active_membership:
+        channels = Channel.query.filter_by(server_id=active_membership.server_id).order_by(Channel.id.asc()).all()
+        if channels:
+            if not active_channel_id:
+                active_channel_id = channels[0].id
+            active_channel = next((c for c in channels if c.id == active_channel_id), channels[0])
+            active_channel_id = active_channel.id
+            messages = ChannelMessage.query.filter_by(channel_id=active_channel_id).order_by(ChannelMessage.created_at.asc()).all()
+
+    users = User.query.filter(User.id != user.id).order_by(User.username.asc()).all()
+    friendships = Friendship.query.filter(
+        ((Friendship.requester_id == user.id) | (Friendship.receiver_id == user.id))
+    ).all()
+
+    friend_ids = set()
+    pending_requests = []
+    for f in friendships:
+        if f.status == "accepted":
+            friend_ids.add(f.requester_id if f.requester_id != user.id else f.receiver_id)
+        elif f.status == "pending" and f.receiver_id == user.id:
+            pending_requests.append(f)
+
+    dm_target_id = request.args.get("dm", type=int)
+    dm_messages = []
+    if dm_target_id and dm_target_id in friend_ids:
+        dm_messages = (
+            DirectMessage.query.filter(
+                ((DirectMessage.sender_id == user.id) & (DirectMessage.receiver_id == dm_target_id))
+                | ((DirectMessage.sender_id == dm_target_id) & (DirectMessage.receiver_id == user.id))
+            )
+            .order_by(DirectMessage.created_at.asc())
+            .all()
+        )
+
+    bot_accounts = BotAccount.query.filter_by(owner_id=user.id).all()
+
+    return render_template(
+        "index.html",
+        user=user,
+        memberships=memberships,
+        public_servers=public_servers,
+        active_membership=active_membership,
+        channels=channels,
+        active_channel_id=active_channel_id,
+        messages=messages,
+        users=users,
+        friend_ids=friend_ids,
+        pending_requests=pending_requests,
+        dm_target_id=dm_target_id,
+        dm_messages=dm_messages,
+        bot_accounts=bot_accounts,
+    )
 
 
-@bp.post("/auth/signup")
+@bp.post("/signup")
 def signup():
-    payload = request.get_json(silent=True) or {}
-    email = (payload.get("email") or "").strip().lower()
-    username = (payload.get("username") or "").strip()
-    display_name = (payload.get("display_name") or "").strip()
-    password = payload.get("password") or ""
-    if not all([email, username, display_name, password]):
-        return jsonify({"error": "missing required fields"}), 400
-    if User.query.filter(or_(User.email == email, User.username == username)).first():
-        return jsonify({"error": "email or username already used"}), 409
-    user = User(email=email, username=username, display_name=display_name)
+    username = request.form["username"].strip()
+    display_name = request.form["display_name"].strip()
+    password = request.form["password"]
+    if User.query.filter_by(username=username).first():
+        flash("이미 존재하는 사용자명입니다.")
+        return redirect(url_for("views.index"))
+
+    user = User(username=username, display_name=display_name)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    return jsonify({"id": user.id, "username": user.username}), 201
+    session["user_id"] = user.id
+    return redirect(url_for("views.index"))
 
 
-@bp.post("/auth/signin")
-def signin():
-    payload = request.get_json(silent=True) or {}
-    email = (payload.get("email") or "").strip().lower()
-    password = payload.get("password") or ""
-    user = User.query.filter_by(email=email, is_bot=False).first()
+@bp.post("/login")
+def login():
+    username = request.form["username"].strip()
+    password = request.form["password"]
+    user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):
-        return jsonify({"error": "invalid credentials"}), 401
-    token = create_access_token(identity=str(user.id))
-    return jsonify({"access_token": token, "user": {"id": user.id, "username": user.username}})
+        flash("로그인 실패")
+        return redirect(url_for("views.index"))
+    session["user_id"] = user.id
+    return redirect(url_for("views.index"))
 
 
-@bp.post("/servers")
-@auth_required
+@bp.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("views.index"))
+
+
+@bp.post("/servers/create")
 def create_server():
-    payload = request.get_json(silent=True) or {}
-    name = (payload.get("name") or "").strip()
-    description = (payload.get("description") or "").strip()
-    is_public = bool(payload.get("is_public", False))
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-
-    server = CommunityServer(
-        name=name, description=description, is_public=is_public, creator_id=g.current_user.id
-    )
+    user = require_login()
+    name = request.form["name"].strip()
+    is_public = request.form.get("is_public") == "on"
+    server = Server(name=name, is_public=is_public, owner_id=user.id)
     db.session.add(server)
     db.session.flush()
-    db.session.add(ServerMembership(server_id=server.id, user_id=g.current_user.id, role="admin"))
-    db.session.add(ServerChannel(server_id=server.id, name="general"))
+    db.session.add(ServerMember(server_id=server.id, user_id=user.id, role="admin"))
+    db.session.add(Channel(server_id=server.id, name="general"))
     db.session.commit()
-    return jsonify({"server_id": server.id, "name": server.name, "is_public": server.is_public}), 201
+    return redirect(url_for("views.index", server=server.id))
 
 
-@bp.get("/servers")
-@auth_required
-def list_servers():
-    memberships = ServerMembership.query.filter_by(user_id=g.current_user.id).all()
-    servers = []
-    for membership in memberships:
-        server = CommunityServer.query.get(membership.server_id)
-        channels = ServerChannel.query.filter_by(server_id=server.id).all()
-        servers.append(
-            {
-                "id": server.id,
-                "name": server.name,
-                "is_public": server.is_public,
-                "role": membership.role,
-                "channels": [{"id": c.id, "name": c.name} for c in channels],
-            }
-        )
-    return jsonify({"servers": servers})
-
-
-@bp.post("/servers/<int:server_id>/channels")
-@auth_required
-def create_channel(server_id: int):
-    if not _is_admin(server_id, g.current_user.id):
-        return jsonify({"error": "admin required"}), 403
-    payload = request.get_json(silent=True) or {}
-    name = (payload.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-    channel = ServerChannel(server_id=server_id, name=name)
+@bp.post("/channels/create")
+def create_channel():
+    user = require_login()
+    server_id = int(request.form["server_id"])
+    membership = get_membership(user.id, server_id)
+    if not membership or membership.role != "admin":
+        abort(403)
+    channel = Channel(server_id=server_id, name=request.form["name"].strip())
     db.session.add(channel)
     db.session.commit()
-    return jsonify({"id": channel.id, "name": channel.name}), 201
+    return redirect(url_for("views.index", server=server_id, channel=channel.id))
 
 
-@bp.get("/servers/<int:server_id>/channels/<int:channel_id>/messages")
-@auth_required
-def read_channel_messages(server_id: int, channel_id: int):
-    if not _membership(server_id, g.current_user.id):
-        return jsonify({"error": "membership required"}), 403
-    messages = (
-        ChannelMessage.query.filter_by(channel_id=channel_id)
-        .order_by(ChannelMessage.created_at.asc())
-        .limit(200)
-        .all()
-    )
-    return jsonify(
-        {
-            "messages": [
-                {
-                    "id": msg.id,
-                    "sender_id": msg.sender_id,
-                    "content": msg.content,
-                    "created_at": msg.created_at.isoformat(),
-                }
-                for msg in messages
-            ]
-        }
-    )
-
-
-@bp.post("/servers/<int:server_id>/channels/<int:channel_id>/messages")
-@auth_required
-def send_channel_message(server_id: int, channel_id: int):
-    if not _membership(server_id, g.current_user.id):
-        return jsonify({"error": "membership required"}), 403
-    if _is_banned(server_id, g.current_user.id):
-        return jsonify({"error": "you are banned from this server"}), 403
-    payload = request.get_json(silent=True) or {}
-    content = (payload.get("content") or "").strip()
-    if not content:
-        return jsonify({"error": "content is required"}), 400
-    msg = ChannelMessage(channel_id=channel_id, sender_id=g.current_user.id, content=content)
-    db.session.add(msg)
+@bp.post("/messages/send")
+def send_message():
+    user = require_login()
+    channel_id = int(request.form["channel_id"])
+    channel = Channel.query.get_or_404(channel_id)
+    membership = get_membership(user.id, channel.server_id)
+    if not membership:
+        abort(403)
+    db.session.add(ChannelMessage(channel_id=channel_id, user_id=user.id, content=request.form["content"].strip()))
     db.session.commit()
-    return jsonify({"id": msg.id, "content": msg.content}), 201
-
-
-@bp.post("/servers/<int:server_id>/invite-links")
-@auth_required
-def create_invite(server_id: int):
-    if not _is_admin(server_id, g.current_user.id):
-        return jsonify({"error": "admin required"}), 403
-    invite = InviteLink(
-        server_id=server_id, code=InviteLink.new_code(), created_by_id=g.current_user.id, is_active=True
-    )
-    db.session.add(invite)
-    db.session.commit()
-    return jsonify({"invite_url": f"/invite?code={invite.code}", "code": invite.code}), 201
+    return redirect(url_for("views.index", server=channel.server_id, channel=channel_id))
 
 
 @bp.get("/invite")
-@auth_required
-def inspect_invite():
+def join_by_invite():
+    user = require_login()
     code = request.args.get("code", "")
-    invite = InviteLink.query.filter_by(code=code, is_active=True).first()
-    if not invite:
-        return jsonify({"error": "invite not found"}), 404
-    server = CommunityServer.query.get(invite.server_id)
-    return jsonify({"server_id": server.id, "server_name": server.name, "is_public": server.is_public})
+    invite = InviteLink.query.filter_by(code=code, is_active=True).first_or_404()
+    existing = ServerMember.query.filter_by(server_id=invite.server_id, user_id=user.id).first()
+    if existing:
+        if existing.is_banned:
+            abort(403)
+        return redirect(url_for("views.index", server=invite.server_id))
 
-
-@bp.post("/invite")
-@auth_required
-def accept_invite():
-    payload = request.get_json(silent=True) or {}
-    code = payload.get("code") or ""
-    invite = InviteLink.query.filter_by(code=code, is_active=True).first()
-    if not invite:
-        return jsonify({"error": "invite not found"}), 404
-    if _is_banned(invite.server_id, g.current_user.id):
-        return jsonify({"error": "banned from this server"}), 403
-    if _membership(invite.server_id, g.current_user.id):
-        return jsonify({"status": "already_member"})
-    db.session.add(ServerMembership(server_id=invite.server_id, user_id=g.current_user.id, role="member"))
+    db.session.add(ServerMember(server_id=invite.server_id, user_id=user.id, role="member"))
     db.session.commit()
-    return jsonify({"status": "joined", "server_id": invite.server_id})
+    return redirect(url_for("views.index", server=invite.server_id))
 
 
-@bp.post("/servers/<int:server_id>/join-public")
-@auth_required
+@bp.post("/servers/<int:server_id>/join")
 def join_public_server(server_id: int):
-    server = CommunityServer.query.get(server_id)
-    if not server or not server.is_public:
-        return jsonify({"error": "public server not found"}), 404
-    if _is_banned(server_id, g.current_user.id):
-        return jsonify({"error": "banned from this server"}), 403
-    if _membership(server_id, g.current_user.id):
-        return jsonify({"status": "already_member"})
-    db.session.add(ServerMembership(server_id=server_id, user_id=g.current_user.id, role="member"))
+    user = require_login()
+    server = Server.query.get_or_404(server_id)
+    if not server.is_public:
+        abort(403)
+    existing = ServerMember.query.filter_by(server_id=server_id, user_id=user.id).first()
+    if existing:
+        if existing.is_banned:
+            abort(403)
+        return redirect(url_for("views.index", server=server_id))
+
+    db.session.add(ServerMember(server_id=server_id, user_id=user.id, role="member"))
     db.session.commit()
-    return jsonify({"status": "joined", "server_id": server_id})
+    return redirect(url_for("views.index", server=server_id))
+
+
+@bp.post("/servers/<int:server_id>/invite")
+def create_invite(server_id: int):
+    user = require_login()
+    membership = get_membership(user.id, server_id)
+    if not membership or membership.role != "admin":
+        abort(403)
+    invite = InviteLink(server_id=server_id, created_by_id=user.id)
+    db.session.add(invite)
+    db.session.commit()
+    flash(f"초대 링크: /invite?code={invite.code}")
+    return redirect(url_for("views.index", server=server_id))
 
 
 @bp.post("/servers/<int:server_id>/ban")
-@auth_required
-def ban_user(server_id: int):
-    if not _is_admin(server_id, g.current_user.id):
-        return jsonify({"error": "admin required"}), 403
-    payload = request.get_json(silent=True) or {}
-    user_id = payload.get("user_id")
-    reason = (payload.get("reason") or "").strip()
-    target_membership = _membership(server_id, user_id)
-    if not target_membership:
-        return jsonify({"error": "target user is not a member"}), 404
-    if target_membership.role == "admin":
-        return jsonify({"error": "cannot ban another admin"}), 400
-    if not _is_banned(server_id, user_id):
-        db.session.add(ServerBan(server_id=server_id, user_id=user_id, banned_by_id=g.current_user.id, reason=reason))
-    ServerMembership.query.filter_by(server_id=server_id, user_id=user_id).delete()
+def ban_member(server_id: int):
+    user = require_login()
+    membership = get_membership(user.id, server_id)
+    if not membership or membership.role != "admin":
+        abort(403)
+
+    target_id = int(request.form["target_id"])
+    target_membership = ServerMember.query.filter_by(server_id=server_id, user_id=target_id).first_or_404()
+    target_membership.is_banned = True
     db.session.commit()
-    return jsonify({"status": "banned", "user_id": user_id})
+    return redirect(url_for("views.index", server=server_id))
 
 
 @bp.post("/friends/request")
-@auth_required
-def send_friend_request():
-    payload = request.get_json(silent=True) or {}
-    username = (payload.get("username") or "").strip()
-    target = User.query.filter_by(username=username, is_bot=False).first()
-    if not target or target.id == g.current_user.id:
-        return jsonify({"error": "invalid target"}), 400
-    if Friendship.query.filter_by(user_id=g.current_user.id, friend_id=target.id).first():
-        return jsonify({"status": "already_friends"})
-    existing = FriendRequest.query.filter_by(sender_id=g.current_user.id, receiver_id=target.id, status="pending").first()
-    if existing:
-        return jsonify({"status": "already_requested"})
-    db.session.add(FriendRequest(sender_id=g.current_user.id, receiver_id=target.id))
+def request_friend():
+    user = require_login()
+    target_id = int(request.form["target_id"])
+    if user.id == target_id:
+        return redirect(url_for("views.index"))
+
+    a, b = sorted([user.id, target_id])
+    existing = Friendship.query.filter(
+        ((Friendship.requester_id == a) & (Friendship.receiver_id == b))
+        | ((Friendship.requester_id == b) & (Friendship.receiver_id == a))
+    ).first()
+    if not existing:
+        db.session.add(Friendship(requester_id=user.id, receiver_id=target_id, status="pending"))
+        db.session.commit()
+    return redirect(url_for("views.index"))
+
+
+@bp.post("/friends/accept")
+def accept_friend():
+    user = require_login()
+    friendship = Friendship.query.get_or_404(int(request.form["friendship_id"]))
+    if friendship.receiver_id != user.id:
+        abort(403)
+    friendship.status = "accepted"
     db.session.commit()
-    return jsonify({"status": "requested"}), 201
+    return redirect(url_for("views.index"))
 
 
-@bp.post("/friends/request/<int:request_id>/accept")
-@auth_required
-def accept_friend_request(request_id: int):
-    friend_request = FriendRequest.query.get(request_id)
-    if not friend_request or friend_request.receiver_id != g.current_user.id:
-        return jsonify({"error": "request not found"}), 404
-    if friend_request.status != "pending":
-        return jsonify({"error": "already handled"}), 400
-    friend_request.status = "accepted"
-    db.session.add(Friendship(user_id=friend_request.sender_id, friend_id=friend_request.receiver_id))
-    db.session.add(Friendship(user_id=friend_request.receiver_id, friend_id=friend_request.sender_id))
-    db.session.commit()
-    return jsonify({"status": "accepted"})
-
-
-@bp.get("/friends")
-@auth_required
-def list_friends():
-    friendships = Friendship.query.filter_by(user_id=g.current_user.id).all()
-    friend_ids = [f.friend_id for f in friendships]
-    users = User.query.filter(User.id.in_(friend_ids)).all() if friend_ids else []
-    return jsonify({"friends": [{"id": u.id, "username": u.username, "display_name": u.display_name} for u in users]})
-
-
-@bp.post("/dm")
-@auth_required
+@bp.post("/dm/send")
 def send_dm():
-    payload = request.get_json(silent=True) or {}
-    receiver_id = payload.get("receiver_id")
-    content = (payload.get("content") or "").strip()
-    if not receiver_id or not content:
-        return jsonify({"error": "receiver_id and content are required"}), 400
-    if not Friendship.query.filter_by(user_id=g.current_user.id, friend_id=receiver_id).first():
-        return jsonify({"error": "dm is only allowed between friends"}), 403
-    dm = DirectMessage(sender_id=g.current_user.id, receiver_id=receiver_id, content=content)
-    db.session.add(dm)
+    user = require_login()
+    target_id = int(request.form["target_id"])
+    friendship = Friendship.query.filter(
+        Friendship.status == "accepted",
+        ((Friendship.requester_id == user.id) & (Friendship.receiver_id == target_id))
+        | ((Friendship.requester_id == target_id) & (Friendship.receiver_id == user.id)),
+    ).first()
+    if not friendship:
+        abort(403)
+    db.session.add(DirectMessage(sender_id=user.id, receiver_id=target_id, content=request.form["content"].strip()))
     db.session.commit()
-    return jsonify({"id": dm.id, "content": dm.content}), 201
+    return redirect(url_for("views.index", dm=target_id))
 
 
-@bp.get("/dm/<int:user_id>")
-@auth_required
-def read_dm(user_id: int):
-    if not Friendship.query.filter_by(user_id=g.current_user.id, friend_id=user_id).first():
-        return jsonify({"error": "dm is only allowed between friends"}), 403
-    messages = (
-        DirectMessage.query.filter(
-            or_(
-                and_(DirectMessage.sender_id == g.current_user.id, DirectMessage.receiver_id == user_id),
-                and_(DirectMessage.sender_id == user_id, DirectMessage.receiver_id == g.current_user.id),
-            )
-        )
-        .order_by(DirectMessage.created_at.asc())
-        .all()
-    )
-    return jsonify(
-        {
-            "messages": [
-                {
-                    "id": m.id,
-                    "sender_id": m.sender_id,
-                    "receiver_id": m.receiver_id,
-                    "content": m.content,
-                    "created_at": m.created_at.isoformat(),
-                }
-                for m in messages
-            ]
-        }
-    )
-
-
-@bp.post("/bots")
-@auth_required
+@bp.post("/bots/create")
 def create_bot():
-    payload = request.get_json(silent=True) or {}
-    bot_name = (payload.get("username") or "").strip()
-    display_name = (payload.get("display_name") or bot_name or "")
-    server_id = payload.get("server_id")
-    if not bot_name or not server_id:
-        return jsonify({"error": "username and server_id are required"}), 400
-    if not _is_admin(server_id, g.current_user.id):
-        return jsonify({"error": "admin required"}), 403
-    if User.query.filter_by(username=bot_name).first():
-        return jsonify({"error": "username already used"}), 409
-
-    bot_user = User(
-        email=f"{bot_name}-{BotCredential.new_token()[:8]}@bot.thisdata.local",
-        username=bot_name,
-        display_name=display_name,
-        is_bot=True,
-        password_hash="!bot!",
-    )
-    db.session.add(bot_user)
-    db.session.flush()
-
-    token = BotCredential.new_token()
-    db.session.add(BotCredential(user_id=bot_user.id, token=token, owner_id=g.current_user.id))
-    db.session.add(ServerMembership(server_id=server_id, user_id=bot_user.id, role="member"))
+    user = require_login()
+    bot = BotAccount(name=request.form["name"].strip(), owner_id=user.id)
+    db.session.add(bot)
     db.session.commit()
-    return jsonify({"bot_user_id": bot_user.id, "bot_token": token}), 201
+    flash(f"봇 토큰: {bot.token}")
+    return redirect(url_for("views.index"))
+
+
+@bp.get("/api/bot/messages")
+def bot_get_messages():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    channel_id = request.args.get("channel_id", type=int)
+    bot = BotAccount.query.filter_by(token=token).first()
+    if not bot:
+        return jsonify({"error": "invalid_token"}), 401
+    channel = Channel.query.get_or_404(channel_id)
+    owner_membership = get_membership(bot.owner_id, channel.server_id)
+    if not owner_membership:
+        return jsonify({"error": "owner_not_member"}), 403
+    rows = ChannelMessage.query.filter_by(channel_id=channel.id).order_by(ChannelMessage.created_at.desc()).limit(50).all()
+    data = [
+        {
+            "id": row.id,
+            "content": row.content,
+            "author": row.user.display_name if row.user else row.bot.name,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in reversed(rows)
+    ]
+    return jsonify({"messages": data})
+
+
+@bp.post("/api/bot/messages")
+def bot_send_message():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    payload = request.get_json(silent=True) or {}
+    channel_id = payload.get("channel_id")
+    content = (payload.get("content") or "").strip()
+    bot = BotAccount.query.filter_by(token=token).first()
+    if not bot:
+        return jsonify({"error": "invalid_token"}), 401
+    if not channel_id or not content:
+        return jsonify({"error": "missing_payload"}), 400
+    channel = Channel.query.get_or_404(channel_id)
+    owner_membership = get_membership(bot.owner_id, channel.server_id)
+    if not owner_membership:
+        return jsonify({"error": "owner_not_member"}), 403
+
+    msg = ChannelMessage(channel_id=channel.id, bot_id=bot.id, content=content)
+    db.session.add(msg)
+    db.session.commit()
+    return jsonify({"status": "sent", "message_id": msg.id})

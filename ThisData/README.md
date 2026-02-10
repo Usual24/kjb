@@ -1,42 +1,28 @@
-# ThisData Community (separate from KJB)
+# ThisData
 
-This folder contains a **new** community backend named **ThisData** so the existing KJB code remains untouched.
+KJB를 건드리지 않고 별도 폴더로 만든 ThisData 커뮤니티 앱입니다.
 
-## Implemented requirements
+## 포함 기능
+- 여러 서버 생성/가입 (공개 서버 직접 가입, 공개/비공개 모두 초대 링크 가입)
+- 서버 리스트 + 채널 리스트 UI (디스코드 스타일 3단 레이아웃)
+- 서버 생성자가 해당 서버 관리자(admin)
+- 서버별 관리자 분리 (서버마다 권한 독립)
+- 관리자 밴 기능
+- 친구 요청/수락 + DM
+- 봇 계정 생성 및 API 토큰으로 메시지 읽기/쓰기
+- 상점/KC/알림 시스템 제외
 
-- Multiple servers with server list and per-server channel list (`GET /api/servers`)
-- Public and private servers (`is_public`)
-- Invite links with `/invite?code=<code>` behavior
-- Server creator becomes admin (not first joiner)
-- Per-server admin role separation
-- Server admins can ban specific users
-- Bot support with API token (`X-Bot-Token`) for reading/sending messages like normal users
-- DM support between friends
-- Friend request/add/list flow
-- Removed from ThisData scope: shop/KC/notification systems
-
-## Quick start
-
+## 실행
 ```bash
 cd ThisData
-python -m venv .venv
-source .venv/bin/activate
-pip install -r ../requirements.txt
 python run.py
 ```
 
-## Main API examples
+## 봇 API 예시
+```bash
+curl -H "Authorization: Bearer <BOT_TOKEN>" "http://localhost:5050/api/bot/messages?channel_id=1"
 
-- `POST /api/auth/signup`
-- `POST /api/auth/signin`
-- `POST /api/servers`
-- `GET /api/servers`
-- `POST /api/servers/<server_id>/invite-links`
-- `GET /api/invite?code=<code>`
-- `POST /api/invite`
-- `POST /api/servers/<server_id>/ban`
-- `POST /api/bots`
-- `POST /api/friends/request`
-- `POST /api/friends/request/<request_id>/accept`
-- `POST /api/dm`
-- `GET /api/dm/<user_id>`
+curl -X POST -H "Authorization: Bearer <BOT_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"channel_id":1, "content":"hello from bot"}' \
+  http://localhost:5050/api/bot/messages
+```
