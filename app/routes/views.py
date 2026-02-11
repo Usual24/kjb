@@ -534,13 +534,20 @@ def admin():
             if not upload_name:
                 flash("지원하지 않는 이미지 형식입니다.")
                 return redirect(url_for("views.admin"))
-            db.session.add(Emoji(name=name, image_url=upload_name))
+            is_public = request.form.get("is_public") == "on"
+            db.session.add(Emoji(name=name, image_url=upload_name, is_public=is_public))
             db.session.commit()
         elif action == "emoji_delete":
             emoji_id = request.form.get("emoji_id")
             emoji = Emoji.query.get(emoji_id)
             if emoji:
                 db.session.delete(emoji)
+                db.session.commit()
+        elif action == "emoji_toggle_public":
+            emoji_id = request.form.get("emoji_id")
+            emoji = Emoji.query.get(emoji_id)
+            if emoji:
+                emoji.is_public = not emoji.is_public
                 db.session.commit()
         elif action == "emoji_permission_upsert":
             user_id = request.form.get("user_id")

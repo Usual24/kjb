@@ -173,12 +173,22 @@
       <input type="hidden" name="action" value="emoji_create">
       <input type="text" name="name" placeholder="이모지 이름 (예: happy_cat)" required>
       <input type="file" name="image_file" accept="image/*" required>
+      <label class="check">
+        <input type="checkbox" name="is_public">
+        모두 사용 가능 (기본 이모지)
+      </label>
       <button class="btn primary" type="submit">이모지 등록</button>
     </form>
     {% for emoji in emojis %}
       <div class="admin-row">
         <span>:{{ emoji.name }}:</span>
         <img src="{{ emoji.image_url|media }}" class="emoji-preview" alt="emoji">
+        <span class="badge">{% if emoji.is_public %}기본 이모지{% else %}권한 필요{% endif %}</span>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="emoji_toggle_public">
+          <input type="hidden" name="emoji_id" value="{{ emoji.id }}">
+          <button class="btn secondary" type="submit">{% if emoji.is_public %}기본 해제{% else %}기본 지정{% endif %}</button>
+        </form>
         <form method="post" class="inline" data-confirm="이모지를 삭제할까요?">
           <input type="hidden" name="action" value="emoji_delete">
           <input type="hidden" name="emoji_id" value="{{ emoji.id }}">
