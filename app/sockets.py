@@ -8,6 +8,7 @@ from .models import (
     User,
     KCLog,
     Notification,
+    Emoji,
     UserAccessoryPermission,
 )
 from .utils import (
@@ -134,9 +135,13 @@ def serialize_message(message):
     created_at = to_kst(message.created_at)
     updated_at = to_kst(message.updated_at) if message.updated_at else None
     emoji_map = {
+        emoji.name: emoji.image_url
+        for emoji in Emoji.query.filter_by(is_public=True).all()
+    }
+    emoji_map.update({
         permission.emoji.name: permission.emoji.image_url
         for permission in message.user.emoji_permissions
-    }
+    })
     active_accessory = (
         UserAccessoryPermission.query.filter_by(user_id=message.user_id, is_active=True)
         .order_by(UserAccessoryPermission.created_at.desc())
