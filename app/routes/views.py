@@ -238,6 +238,12 @@ def mark_chat_read():
     return ("", 204)
 
 
+@bp.route("/voice")
+@login_required
+def voice_room():
+    return render_template("voice.html")
+
+
 @bp.route("/profile")
 @login_required
 def profile():
