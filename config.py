@@ -1,5 +1,4 @@
 import os
-import json
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -11,13 +10,4 @@ class Config:
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", os.path.join(BASE_DIR, "uploads"))
     MAX_CONTENT_LENGTH = 20 * 1024 * 1024
     SOCKETIO_MESSAGE_QUEUE = os.getenv("SOCKETIO_MESSAGE_QUEUE")
-    VOICE_ICE_SERVERS_JSON = os.getenv(
-        "VOICE_ICE_SERVERS_JSON",
-        json.dumps(
-            [
-                {"urls": "stun:stun.l.google.com:19302"},
-                {"urls": "stun:stun1.l.google.com:19302"},
-            ]
-        ),
-    )
     ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "mp4", "mp3", "pdf"}

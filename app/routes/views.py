@@ -1,5 +1,4 @@
 from datetime import datetime
-import json
 from flask import (
     Blueprint,
     render_template,
@@ -7,7 +6,6 @@ from flask import (
     redirect,
     url_for,
     flash,
-    current_app,
     send_from_directory,
 )
 from ..extensions import db
@@ -227,24 +225,6 @@ def mark_chat_read():
     _mark_channel_read(current, channel.id, message_id)
     db.session.commit()
     return ("", 204)
-
-
-@bp.route("/voice")
-@login_required
-def voice_room():
-    raw_ice_servers = current_app.config.get("VOICE_ICE_SERVERS_JSON", "[]")
-    try:
-        ice_servers = json.loads(raw_ice_servers)
-        if not isinstance(ice_servers, list):
-            ice_servers = []
-    except (TypeError, ValueError):
-        ice_servers = []
-    if not ice_servers:
-        ice_servers = [
-            {"urls": "stun:stun.l.google.com:19302"},
-            {"urls": "stun:stun1.l.google.com:19302"},
-        ]
-    return render_template("voice.html", voice_ice_servers=ice_servers)
 
 
 @bp.route("/profile")
