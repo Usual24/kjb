@@ -90,6 +90,19 @@ class Message(db.Model):
     reply_to = db.relationship("Message", remote_side=[id])
 
 
+class UserChannelRead(db.Model):
+    __tablename__ = "user_channel_reads"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    channel_id = db.Column(db.Integer, db.ForeignKey("channels.id"), nullable=False)
+    last_read_message_id = db.Column(db.Integer, default=0)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "channel_id", name="uq_user_channel_read"),
+    )
+
+
 class Emoji(db.Model):
     __tablename__ = "emojis"
     id = db.Column(db.Integer, primary_key=True)

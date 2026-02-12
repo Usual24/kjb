@@ -7,12 +7,31 @@ const input = document.getElementById('chatInput');
 const sendButton = document.getElementById('sendButton');
 const contextMenu = document.getElementById('contextMenu');
 const replyBanner = document.getElementById('replyBanner');
+const typingIndicator = document.getElementById('typingIndicator');
 const onlineLists = document.querySelectorAll('[data-online-list]');
 let replyToId = null;
 let contextMessageId = null;
 let contextUserId = null;
+let typing = false;
+let typingTimer = null;
 
 socket.emit('join', { channel });
+
+function markChannelRead(messageId) {
+  if (!messageId) return;
+  const body = new URLSearchParams({ channel, message_id: messageId.toString() });
+  fetch('/chat/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  }).catch(() => {});
+}
+
+function updateTypingState(nextState) {
+  if (typing === nextState) return;
+  typing = nextState;
+  socket.emit('typing', { channel, is_typing: typing });
+}
 
 function renderMessage(message) {
   const wrapper = document.createElement('div');
@@ -42,12 +61,13 @@ function appendMessage(message) {
   const element = renderMessage(message);
   messageList.appendChild(element);
   messageList.scrollTop = messageList.scrollHeight;
+  markChannelRead(message.id);
 }
 
 function updateOnlineList(users) {
   onlineLists.forEach((list) => {
     list.innerHTML = '';
-    users.forEach(user => {
+    users.forEach((user) => {
       const li = document.createElement('li');
       li.className = 'online-item';
       li.innerHTML = `
@@ -68,6 +88,19 @@ function updateOnlineList(users) {
 
 socket.on('online_update', (users) => {
   updateOnlineList(users);
+});
+
+socket.on('typing_update', (payload) => {
+  if (!payload || payload.channel !== channel) return;
+  const others = (payload.users || []).filter((user) => user.id !== window.KJB_CURRENT_USER_ID);
+  if (!others.length) {
+    typingIndicator.classList.add('hidden');
+    typingIndicator.textContent = '';
+    return;
+  }
+  const names = others.map((user) => user.name);
+  typingIndicator.textContent = names.length === 1 ? `${names[0]} 입력 중...` : `${names[0]} 외 ${names.length - 1}명 입력 중...`;
+  typingIndicator.classList.remove('hidden');
 });
 
 socket.on('new_message', (message) => {
@@ -104,6 +137,21 @@ sendButton.addEventListener('click', () => {
   input.value = '';
   replyToId = null;
   replyBanner.classList.add('hidden');
+  updateTypingState(false);
+});
+
+input.addEventListener('input', () => {
+  if (!canSend) return;
+  const hasValue = input.value.trim().length > 0;
+  updateTypingState(hasValue);
+  if (typingTimer) {
+    clearTimeout(typingTimer);
+  }
+  typingTimer = setTimeout(() => updateTypingState(false), 1500);
+});
+
+input.addEventListener('blur', () => {
+  updateTypingState(false);
 });
 
 input.addEventListener('keydown', (event) => {
@@ -131,6 +179,11 @@ window.addEventListener('click', () => {
   contextMenu.classList.add('hidden');
 });
 
+window.addEventListener('beforeunload', () => {
+  socket.emit('typing', { channel, is_typing: false });
+  socket.emit('leave', { channel });
+});
+
 contextMenu.addEventListener('click', (event) => {
   const action = event.target.dataset.action;
   if (!action) return;
@@ -154,3 +207,8 @@ contextMenu.addEventListener('click', (event) => {
   }
   contextMenu.classList.add('hidden');
 });
+
+const lastMessage = messageList.querySelector('.message:last-of-type');
+if (lastMessage) {
+  markChannelRead(parseInt(lastMessage.dataset.messageId, 10));
+}

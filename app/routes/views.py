@@ -24,6 +24,7 @@ from ..models import (
     UserEmojiPermission,
     Accessory,
     UserAccessoryPermission,
+    UserChannelRead,
 )
 from ..utils import (
     login_required,
@@ -42,6 +43,43 @@ from ..sockets import online_users
 from ..sockets import serialize_message
 
 bp = Blueprint("views", __name__)
+
+def _compute_unread_channel_ids(user, channels):
+    if not user:
+        return set()
+    channel_ids = [channel.id for channel in channels]
+    if not channel_ids:
+        return set()
+    latest_rows = (
+        db.session.query(Message.channel_id, db.func.max(Message.id))
+        .filter(Message.channel_id.in_(channel_ids), Message.is_deleted.is_(False))
+        .group_by(Message.channel_id)
+        .all()
+    )
+    latest_map = {channel_id: max_id for channel_id, max_id in latest_rows if max_id}
+    read_rows = UserChannelRead.query.filter(
+        UserChannelRead.user_id == user.id,
+        UserChannelRead.channel_id.in_(channel_ids),
+    ).all()
+    read_map = {row.channel_id: row.last_read_message_id for row in read_rows}
+    return {
+        channel_id
+        for channel_id, max_id in latest_map.items()
+        if (read_map.get(channel_id) or 0) < max_id
+    }
+
+
+def _mark_channel_read(user, channel_id, message_id):
+    if not user or not channel_id or not message_id:
+        return
+    state = UserChannelRead.query.filter_by(user_id=user.id, channel_id=channel_id).first()
+    if not state:
+        state = UserChannelRead(
+            user_id=user.id, channel_id=channel_id, last_read_message_id=message_id
+        )
+        db.session.add(state)
+    elif state.last_read_message_id < message_id:
+        state.last_read_message_id = message_id
 
 
 @bp.before_app_request
@@ -163,13 +201,41 @@ def chat():
             .all()
         )
         serialized_messages = [serialize_message(message) for message in messages]
+        if messages:
+            _mark_channel_read(current, channel.id, messages[-1].id)
+            db.session.commit()
+    visible_channels = [
+        ch
+        for ch in Channel.query.order_by(Channel.priority.desc(), Channel.name.asc()).all()
+        if resolve_channel_permissions(current, ch)["can_view"]
+    ]
+    unread_channel_ids = _compute_unread_channel_ids(current, visible_channels)
     return render_template(
         "chat.html",
         channel=channel,
         messages=serialized_messages,
         can_send=permissions["can_send"],
         can_read=permissions["can_read"],
+        unread_channel_ids=unread_channel_ids,
     )
+
+
+@bp.route("/chat/read", methods=["POST"])
+@login_required
+def mark_chat_read():
+    current = get_current_user()
+    channel_slug = request.form.get("channel", "")
+    message_id = parse_int(request.form.get("message_id"))
+    if not channel_slug or not message_id:
+        return ("", 204)
+    channel = Channel.query.filter_by(slug=channel_slug).first()
+    if not channel:
+        return ("", 204)
+    if not resolve_channel_permissions(current, channel)["can_read"]:
+        return ("", 204)
+    _mark_channel_read(current, channel.id, message_id)
+    db.session.commit()
+    return ("", 204)
 
 
 @bp.route("/profile")

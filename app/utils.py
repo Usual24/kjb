@@ -11,6 +11,10 @@ from .models import User, ChannelPermission
 
 
 EMOJI_PATTERN = re.compile(r":([a-zA-Z0-9_\-]+):")
+CODE_PATTERN = re.compile(r"`([^`\n]+)`")
+BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+ITALIC_PATTERN = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
 
 def init_session(app):
@@ -159,7 +163,7 @@ def render_chat_content(content, emoji_map):
     parts = []
     last_end = 0
     for match in EMOJI_PATTERN.finditer(content):
-        parts.append(escape(content[last_end : match.start()]))
+        parts.append(_render_markdown_segment(content[last_end : match.start()]))
         key = match.group(1)
         emoji_url = emoji_map.get(key)
         if emoji_url:
@@ -169,7 +173,21 @@ def render_chat_content(content, emoji_map):
                 )
             )
         else:
-            parts.append(escape(match.group(0)))
+            parts.append(_render_markdown_segment(match.group(0)))
         last_end = match.end()
-    parts.append(escape(content[last_end:]))
+    parts.append(_render_markdown_segment(content[last_end:]))
     return Markup("".join(str(part) for part in parts))
+
+
+def _render_markdown_segment(segment):
+    if not segment:
+        return ""
+    text = escape(segment)
+    text = CODE_PATTERN.sub(r"<code>\1</code>", str(text))
+    text = BOLD_PATTERN.sub(r"<strong>\1</strong>", text)
+    text = ITALIC_PATTERN.sub(r"<em>\1</em>", text)
+    text = LINK_PATTERN.sub(
+        r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', text
+    )
+    text = text.replace("\n", "<br>")
+    return Markup(text)

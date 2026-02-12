@@ -21,6 +21,11 @@ body {
   color: var(--text);
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -338,11 +343,22 @@ textarea {
   min-height: calc(100vh - 80px);
 }
 
+.chat-page {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.chat-page .chat-layout {
+  height: calc(100vh - 81px);
+  min-height: 0;
+}
+
 .sidebar,
 .online {
   background: var(--panel);
   padding: 20px;
   border-right: 1px solid #2f2d4a;
+  overflow-y: auto;
 }
 
 .online {
@@ -378,6 +394,7 @@ textarea {
   display: flex;
   flex-direction: column;
   background: #171528;
+  min-height: 0;
 }
 
 .chat-header {
@@ -485,6 +502,39 @@ textarea {
 .reply-banner.hidden {
   display: none;
 }
+
+.unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #ff3f55;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.typing-indicator {
+  padding: 6px 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.typing-indicator.hidden {
+  display: none;
+}
+
+.message-content a {
+  color: var(--accent-light);
+  text-decoration: underline;
+}
+
+.message-content code {
+  background: var(--panel-alt);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 
 .hint {
   margin: 0;
