@@ -1,4 +1,7 @@
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+});
 const toggleButton = document.getElementById('voiceToggleButton');
 const participantList = document.getElementById('voiceParticipantList');
 
@@ -14,14 +17,38 @@ let speakingInterval = null;
 let lastSpeakingState = false;
 let latestParticipants = [];
 
+const defaultIceServers = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+const configuredIceServers = Array.isArray(window.KJB_VOICE_ICE_SERVERS)
+  ? window.KJB_VOICE_ICE_SERVERS.filter((server) => server && typeof server === 'object' && server.urls)
+  : [];
+
 const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
+  iceServers: configuredIceServers.length ? configuredIceServers : defaultIceServers,
 };
 
 const getCurrentUserId = () => Number(window.KJB_CURRENT_USER_ID);
+
+const serializeSessionDescription = (description) => {
+  if (!description) return null;
+  return {
+    type: description.type,
+    sdp: description.sdp,
+  };
+};
+
+const serializeIceCandidate = (candidate) => {
+  if (!candidate) return null;
+  return {
+    candidate: candidate.candidate,
+    sdpMid: candidate.sdpMid,
+    sdpMLineIndex: candidate.sdpMLineIndex,
+    usernameFragment: candidate.usernameFragment,
+  };
+};
 
 const renderParticipants = (participants) => {
   if (!participantList) return;
@@ -131,9 +158,11 @@ const createPeerConnection = (remoteUserId) => {
 
   connection.onicecandidate = (event) => {
     if (!event.candidate) return;
+    const candidate = serializeIceCandidate(event.candidate);
+    if (!candidate?.candidate) return;
     socket.emit('voice_signal', {
       target_id: remoteUserId,
-      signal: { type: 'candidate', candidate: event.candidate },
+      signal: { type: 'candidate', candidate },
     });
   };
 
@@ -240,9 +269,11 @@ const reconcilePeers = async (participants) => {
     try {
       const offer = await connection.createOffer({ offerToReceiveAudio: true });
       await connection.setLocalDescription(offer);
+      const localDescription = serializeSessionDescription(connection.localDescription);
+      if (!localDescription?.sdp) continue;
       socket.emit('voice_signal', {
         target_id: user.id,
-        signal: { type: 'offer', sdp: connection.localDescription },
+        signal: { type: 'offer', sdp: localDescription },
       });
     } catch (error) {
       console.error('오퍼 생성 실패', error);
@@ -269,6 +300,7 @@ socket.on('voice_room_update', async (participants) => {
   const iAmInRoom = users.some((user) => user.id === getCurrentUserId());
   if (!iAmInRoom && joined) {
     cleanupVoiceResources();
+    setJoined(false);
   }
   setJoined(iAmInRoom && !!localStream);
   await reconcilePeers(users);
@@ -287,18 +319,22 @@ socket.on('voice_signal', async ({ from_id: fromId, signal }) => {
 
   try {
     if (signal.type === 'offer') {
+      if (!signal.sdp?.sdp) return;
       await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
       await flushPendingIceCandidates(Number(fromId), connection);
       const answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
+      const localDescription = serializeSessionDescription(connection.localDescription);
+      if (!localDescription?.sdp) return;
       socket.emit('voice_signal', {
         target_id: Number(fromId),
-        signal: { type: 'answer', sdp: connection.localDescription },
+        signal: { type: 'answer', sdp: localDescription },
       });
       return;
     }
 
     if (signal.type === 'answer') {
+      if (!signal.sdp?.sdp) return;
       await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
       await flushPendingIceCandidates(Number(fromId), connection);
       return;

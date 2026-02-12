@@ -229,7 +229,7 @@ def register_socket_handlers(socketio):
         join_room("voice_room")
         voice_room_users.add(user.id)
         emit("voice_room_update", _voice_room_payload(), broadcast=True)
-        emit("voice_activity_update", _voice_activity_payload())
+        emit("voice_activity_update", _voice_activity_payload(), broadcast=True)
 
     @socketio.on("leave_voice_room")
     def handle_leave_voice_room():
