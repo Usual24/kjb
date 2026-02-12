@@ -37,10 +37,11 @@ from ..utils import (
     to_kst,
     save_upload,
     resolve_channel_permissions,
+    build_channel_permission_map,
     parse_int,
 )
 from ..sockets import online_users
-from ..sockets import serialize_message
+from ..sockets import serialize_messages
 
 bp = Blueprint("views", __name__)
 
@@ -91,10 +92,10 @@ def load_user():
 def index():
     if get_current_user():
         current = get_current_user()
-        for channel in Channel.query.order_by(
-            Channel.priority.desc(), Channel.name.asc()
-        ).all():
-            if resolve_channel_permissions(current, channel)["can_view"]:
+        channels = Channel.query.order_by(Channel.priority.desc(), Channel.name.asc()).all()
+        permission_map = build_channel_permission_map(current, channels)
+        for channel in channels:
+            if permission_map[channel.id]["can_view"]:
                 return redirect(url_for("views.chat", id=channel.slug))
     return render_template("index.html")
 
@@ -164,33 +165,26 @@ def logout():
 def chat():
     channel_slug = request.args.get("id")
     current = get_current_user()
+    all_channels = Channel.query.order_by(Channel.priority.desc(), Channel.name.asc()).all()
+    permission_map = build_channel_permission_map(current, all_channels)
+    visible_channels = [ch for ch in all_channels if permission_map[ch.id]["can_view"]]
+
     if not channel_slug:
-        first_channel = None
-        for candidate in Channel.query.order_by(
-            Channel.priority.desc(), Channel.name.asc()
-        ).all():
-            if resolve_channel_permissions(current, candidate)["can_view"]:
-                first_channel = candidate
-                break
-        if first_channel:
-            return redirect(url_for("views.chat", id=first_channel.slug))
+        if visible_channels:
+            return redirect(url_for("views.chat", id=visible_channels[0].slug))
+
     channel = Channel.query.filter_by(slug=channel_slug).first()
     if not channel:
         flash("채널을 찾을 수 없습니다.")
         return redirect(url_for("views.index"))
-    permissions = resolve_channel_permissions(current, channel)
+
+    permissions = permission_map.get(channel.id, resolve_channel_permissions(current, channel))
     if not permissions["can_view"]:
-        allowed = [
-            ch
-            for ch in Channel.query.order_by(
-                Channel.priority.desc(), Channel.name.asc()
-            ).all()
-            if resolve_channel_permissions(current, ch)["can_view"]
-        ]
-        if allowed:
-            return redirect(url_for("views.chat", id=allowed[0].slug))
+        if visible_channels:
+            return redirect(url_for("views.chat", id=visible_channels[0].slug))
         flash("접근 가능한 채널이 없습니다.")
         return redirect(url_for("views.index"))
+
     messages = []
     serialized_messages = []
     if permissions["can_read"]:
@@ -200,15 +194,11 @@ def chat():
             .limit(200)
             .all()
         )
-        serialized_messages = [serialize_message(message) for message in messages]
+        serialized_messages = serialize_messages(messages)
         if messages:
             _mark_channel_read(current, channel.id, messages[-1].id)
             db.session.commit()
-    visible_channels = [
-        ch
-        for ch in Channel.query.order_by(Channel.priority.desc(), Channel.name.asc()).all()
-        if resolve_channel_permissions(current, ch)["can_view"]
-    ]
+
     unread_channel_ids = _compute_unread_channel_ids(current, visible_channels)
     return render_template(
         "chat.html",
