@@ -22,6 +22,7 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
   window.KJB_CURRENT_USER_ID = {{ current_user.id }};
+  window.KJB_VOICE_ICE_SERVERS = {{ voice_ice_servers|tojson }};
 </script>
 <script src="/static/js/voice.js"></script>
 {% endblock %}
