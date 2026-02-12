@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 
+{% block body_class %}chat-page{% endblock %}
+
 {% block drawer_extra %}
 <div class="drawer-section">
   <h3>채널</h3>
   <ul class="drawer-channel-list">
     {% for ch in channels %}
       <li class="{% if ch.id == channel.id %}active{% endif %}">
-        <a href="/chat?id={{ ch.slug }}">{{ ch.name }}</a>
+        <a href="/chat?id={{ ch.slug }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
       </li>
     {% endfor %}
   </ul>
@@ -24,7 +26,7 @@
     <ul>
       {% for ch in channels %}
         <li class="{% if ch.id == channel.id %}active{% endif %}">
-          <a href="/chat?id={{ ch.slug }}">{{ ch.name }}</a>
+          <a href="/chat?id={{ ch.slug }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
         </li>
       {% endfor %}
     </ul>
@@ -67,6 +69,7 @@
       {% endif %}
     </div>
     <div id="replyBanner" class="reply-banner hidden"></div>
+    <div id="typingIndicator" class="typing-indicator hidden"></div>
     <div class="chat-input">
       <textarea id="chatInput" placeholder="메시지를 입력하세요..." {% if not can_send %}disabled{% endif %}></textarea>
       <button class="btn primary" id="sendButton" {% if not can_send %}disabled{% endif %}>전송</button>

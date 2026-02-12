@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <div class="topbar-left">
       <button class="menu-toggle" id="drawerToggle" type="button" aria-label="메뉴 열기" aria-controls="mobileDrawer" aria-expanded="false">
