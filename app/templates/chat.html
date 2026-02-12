@@ -7,8 +7,8 @@
   <h3>채널</h3>
   <ul class="drawer-channel-list">
     {% for ch in channels %}
-      <li class="{% if ch.id == channel.id %}active{% endif %}">
-        <a href="/chat?id={{ ch.slug }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
+      <li class="{% if ch.id == channel.id %}active{% endif %}" data-channel-id="{{ ch.id }}" data-channel-slug="{{ ch.slug }}">
+        <a href="/chat?id={{ ch.slug }}" data-channel-id="{{ ch.id }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
       </li>
     {% endfor %}
   </ul>
@@ -25,14 +25,14 @@
     <h3>채널</h3>
     <ul>
       {% for ch in channels %}
-        <li class="{% if ch.id == channel.id %}active{% endif %}">
-          <a href="/chat?id={{ ch.slug }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
+        <li class="{% if ch.id == channel.id %}active{% endif %}" data-channel-id="{{ ch.id }}" data-channel-slug="{{ ch.slug }}">
+          <a href="/chat?id={{ ch.slug }}" data-channel-id="{{ ch.id }}">{{ ch.name }}{% if ch.id in unread_channel_ids %}<span class="unread-dot" aria-label="읽지 않음"></span>{% endif %}</a>
         </li>
       {% endfor %}
     </ul>
   </aside>
 
-  <main class="chat-main" data-channel="{{ channel.slug }}" data-can-send="{{ 'true' if can_send else 'false' }}">
+  <main class="chat-main" data-channel="{{ channel.slug }}" data-channel-id="{{ channel.id }}" data-can-send="{{ 'true' if can_send else 'false' }}">
     <div class="chat-header">
       <div>
         <h2>{{ channel.name }}</h2>
