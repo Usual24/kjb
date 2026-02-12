@@ -1,4 +1,7 @@
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+});
 const toggleButton = document.getElementById('voiceToggleButton');
 const participantList = document.getElementById('voiceParticipantList');
 
@@ -14,11 +17,17 @@ let speakingInterval = null;
 let lastSpeakingState = false;
 let latestParticipants = [];
 
+const defaultIceServers = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+const configuredIceServers = Array.isArray(window.KJB_VOICE_ICE_SERVERS)
+  ? window.KJB_VOICE_ICE_SERVERS.filter((server) => server && typeof server === 'object' && server.urls)
+  : [];
+
 const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
+  iceServers: configuredIceServers.length ? configuredIceServers : defaultIceServers,
 };
 
 const getCurrentUserId = () => Number(window.KJB_CURRENT_USER_ID);
@@ -269,6 +278,7 @@ socket.on('voice_room_update', async (participants) => {
   const iAmInRoom = users.some((user) => user.id === getCurrentUserId());
   if (!iAmInRoom && joined) {
     cleanupVoiceResources();
+    setJoined(false);
   }
   setJoined(iAmInRoom && !!localStream);
   await reconcilePeers(users);
