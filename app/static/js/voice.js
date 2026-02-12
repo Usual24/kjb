@@ -4,6 +4,7 @@ const participantList = document.getElementById('voiceParticipantList');
 
 const peerConnections = new Map();
 const remoteAudioElements = new Map();
+const pendingIceCandidates = new Map();
 const activeSpeakerIds = new Set();
 
 let joined = false;
@@ -74,6 +75,7 @@ const closePeerConnection = (userId) => {
     connection.close();
   }
   peerConnections.delete(userId);
+  pendingIceCandidates.delete(userId);
 
   const audio = remoteAudioElements.get(userId);
   if (audio) {
@@ -81,6 +83,22 @@ const closePeerConnection = (userId) => {
     audio.remove();
   }
   remoteAudioElements.delete(userId);
+};
+
+const queueIceCandidate = (userId, candidate) => {
+  const pending = pendingIceCandidates.get(userId) || [];
+  pending.push(candidate);
+  pendingIceCandidates.set(userId, pending);
+};
+
+const flushPendingIceCandidates = async (userId, connection) => {
+  const pending = pendingIceCandidates.get(userId);
+  if (!pending?.length) return;
+
+  for (const candidate of pending) {
+    await connection.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+  pendingIceCandidates.delete(userId);
 };
 
 const cleanupVoiceResources = () => {
@@ -270,6 +288,7 @@ socket.on('voice_signal', async ({ from_id: fromId, signal }) => {
   try {
     if (signal.type === 'offer') {
       await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      await flushPendingIceCandidates(Number(fromId), connection);
       const answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
       socket.emit('voice_signal', {
@@ -281,11 +300,16 @@ socket.on('voice_signal', async ({ from_id: fromId, signal }) => {
 
     if (signal.type === 'answer') {
       await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      await flushPendingIceCandidates(Number(fromId), connection);
       return;
     }
 
     if (signal.type === 'candidate' && signal.candidate) {
-      await connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      if (connection.remoteDescription) {
+        await connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } else {
+        queueIceCandidate(Number(fromId), signal.candidate);
+      }
     }
   } catch (error) {
     console.error('시그널 처리 실패', error);
