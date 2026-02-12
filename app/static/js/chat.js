@@ -1,4 +1,11 @@
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling'],
+  timeout: 10000,
+  reconnectionAttempts: 8,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+});
+
 const chatMain = document.querySelector('.chat-main');
 const channel = chatMain.dataset.channel;
 const channelId = parseInt(chatMain.dataset.channelId, 10);
@@ -15,6 +22,9 @@ let contextMessageId = null;
 let contextUserId = null;
 let typing = false;
 let typingTimer = null;
+let readTimer = null;
+let latestReadMessageId = null;
+let sendInFlight = false;
 
 const channelItems = Array.from(document.querySelectorAll('[data-channel-slug][data-channel-id]'));
 const joinedChannelSlugs = new Set(channelItems.map((item) => item.dataset.channelSlug).filter(Boolean));
@@ -22,6 +32,13 @@ const joinedChannelSlugs = new Set(channelItems.map((item) => item.dataset.chann
 joinedChannelSlugs.forEach((slug) => {
   socket.emit('join', { channel: slug });
 });
+
+function setSendingState(isSending) {
+  sendInFlight = isSending;
+  if (sendButton) {
+    sendButton.disabled = isSending || !canSend;
+  }
+}
 
 function setUnreadDot(targetChannelId, isUnread) {
   if (!targetChannelId) return;
@@ -41,16 +58,26 @@ function setUnreadDot(targetChannelId, isUnread) {
   });
 }
 
-function markChannelRead(messageId) {
-  if (!messageId) return;
-  const body = new URLSearchParams({ channel, message_id: messageId.toString() });
+function flushReadState() {
+  if (!latestReadMessageId) return;
+  const body = new URLSearchParams({ channel, message_id: latestReadMessageId.toString() });
   fetch('/chat/read', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
+    keepalive: true,
   })
     .then(() => setUnreadDot(channelId, false))
     .catch(() => {});
+}
+
+function queueMarkChannelRead(messageId) {
+  if (!messageId) return;
+  latestReadMessageId = Math.max(latestReadMessageId || 0, messageId);
+  if (readTimer) {
+    clearTimeout(readTimer);
+  }
+  readTimer = setTimeout(flushReadState, 400);
 }
 
 function updateTypingState(nextState) {
@@ -84,16 +111,19 @@ function renderMessage(message) {
 }
 
 function appendMessage(message) {
+  const shouldStickToBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 80;
   const element = renderMessage(message);
   messageList.appendChild(element);
-  messageList.scrollTop = messageList.scrollHeight;
+  if (shouldStickToBottom) {
+    messageList.scrollTop = messageList.scrollHeight;
+  }
   setUnreadDot(channelId, false);
-  markChannelRead(message.id);
+  queueMarkChannelRead(message.id);
 }
 
 function updateOnlineList(users) {
   onlineLists.forEach((list) => {
-    list.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     users.forEach((user) => {
       const li = document.createElement('li');
       li.className = 'online-item';
@@ -108,10 +138,15 @@ function updateOnlineList(users) {
       if (nameLink && user.name_color) {
         nameLink.style.color = user.name_color;
       }
-      list.appendChild(li);
+      fragment.appendChild(li);
     });
+    list.replaceChildren(fragment);
   });
 }
+
+socket.on('connect_error', () => {
+  setSendingState(false);
+});
 
 socket.on('online_update', (users) => {
   updateOnlineList(users);
@@ -161,14 +196,25 @@ socket.on('message_deleted', (payload) => {
 });
 
 sendButton.addEventListener('click', () => {
-  if (!canSend) return;
+  if (!canSend || sendInFlight) return;
   const content = input.value.trim();
   if (!content) return;
-  socket.emit('send_message', { channel, content, reply_to: replyToId });
-  input.value = '';
-  replyToId = null;
-  replyBanner.classList.add('hidden');
-  updateTypingState(false);
+
+  const pendingReplyId = replyToId;
+  setSendingState(true);
+
+  socket.timeout(8000).emit('send_message', { channel, content, reply_to: pendingReplyId }, (err, response) => {
+    setSendingState(false);
+    if (err || !response || !response.ok) {
+      alert('메시지 전송이 지연되거나 실패했습니다. 네트워크 상태를 확인해주세요.');
+      return;
+    }
+
+    input.value = '';
+    replyToId = null;
+    replyBanner.classList.add('hidden');
+    updateTypingState(false);
+  });
 });
 
 input.addEventListener('input', () => {
@@ -213,6 +259,7 @@ window.addEventListener('click', () => {
 window.addEventListener('beforeunload', () => {
   socket.emit('typing', { channel, is_typing: false });
   socket.emit('leave', { channel });
+  flushReadState();
 });
 
 contextMenu.addEventListener('click', (event) => {
@@ -241,6 +288,6 @@ contextMenu.addEventListener('click', (event) => {
 
 const lastMessage = messageList.querySelector('.message:last-of-type');
 if (lastMessage) {
-  markChannelRead(parseInt(lastMessage.dataset.messageId, 10));
+  queueMarkChannelRead(parseInt(lastMessage.dataset.messageId, 10));
 }
 setUnreadDot(channelId, false);

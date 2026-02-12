@@ -122,30 +122,47 @@ def media_url(value):
     return f"/media/{value}"
 
 
-def resolve_channel_permissions(user, channel):
+def build_channel_permission_map(user, channels):
     if not user:
-        return {"can_view": False, "can_read": False, "can_send": False}
+        return {channel.id: {"can_view": False, "can_read": False, "can_send": False} for channel in channels}
     if user.is_admin:
-        return {"can_view": True, "can_read": True, "can_send": True}
-    override = ChannelPermission.query.filter_by(
-        user_id=user.id, channel_id=channel.id
-    ).first()
-    if override:
-        permissions = {
-            "can_view": override.can_view,
-            "can_read": override.can_read,
-            "can_send": override.can_send,
-        }
-    else:
-        permissions = {
-            "can_view": channel.default_can_view,
-            "can_read": channel.default_can_read,
-            "can_send": channel.default_can_send,
-        }
-    if not permissions["can_view"]:
-        permissions["can_read"] = False
-        permissions["can_send"] = False
-    return permissions
+        return {channel.id: {"can_view": True, "can_read": True, "can_send": True} for channel in channels}
+
+    channel_ids = [channel.id for channel in channels]
+    overrides = {}
+    if channel_ids:
+        rows = ChannelPermission.query.filter(
+            ChannelPermission.user_id == user.id,
+            ChannelPermission.channel_id.in_(channel_ids),
+        ).all()
+        overrides = {row.channel_id: row for row in rows}
+
+    permission_map = {}
+    for channel in channels:
+        override = overrides.get(channel.id)
+        if override:
+            permissions = {
+                "can_view": override.can_view,
+                "can_read": override.can_read,
+                "can_send": override.can_send,
+            }
+        else:
+            permissions = {
+                "can_view": channel.default_can_view,
+                "can_read": channel.default_can_read,
+                "can_send": channel.default_can_send,
+            }
+        if not permissions["can_view"]:
+            permissions["can_read"] = False
+            permissions["can_send"] = False
+        permission_map[channel.id] = permissions
+    return permission_map
+
+
+def resolve_channel_permissions(user, channel):
+    return build_channel_permission_map(user, [channel]).get(
+        channel.id, {"can_view": False, "can_read": False, "can_send": False}
+    )
 
 
 def parse_int(value):
