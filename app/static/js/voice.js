@@ -2,7 +2,25 @@ const socket = io();
 const toggleButton = document.getElementById('voiceToggleButton');
 const participantList = document.getElementById('voiceParticipantList');
 
+const peerConnections = new Map();
+const remoteAudioElements = new Map();
+const activeSpeakerIds = new Set();
+
 let joined = false;
+let localStream = null;
+let audioContext = null;
+let speakingInterval = null;
+let lastSpeakingState = false;
+let latestParticipants = [];
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+};
+
+const getCurrentUserId = () => Number(window.KJB_CURRENT_USER_ID);
 
 const renderParticipants = (participants) => {
   if (!participantList) return;
@@ -13,11 +31,13 @@ const renderParticipants = (participants) => {
 
   participantList.innerHTML = participants
     .map((user) => {
-      const meBadge = user.id === window.KJB_CURRENT_USER_ID ? '<span class="badge">나</span>' : '';
+      const meBadge = user.id === getCurrentUserId() ? '<span class="badge">나</span>' : '';
+      const speakingClass = activeSpeakerIds.has(user.id) ? 'on' : '';
       return `
-        <li class="voice-user-item">
+        <li class="voice-user-item" data-user-id="${user.id}">
           <img src="${user.avatar}" alt="avatar">
           <a href="/profile?usr=${user.email_prefix}">${user.name}</a>
+          <span class="voice-speaking-indicator ${speakingClass}" aria-label="speaking"></span>
           ${meBadge}
         </li>
       `;
@@ -34,29 +54,245 @@ const setJoined = (value) => {
   toggleButton.classList.toggle('success', !joined);
 };
 
-toggleButton?.addEventListener('click', () => {
+const createRemoteAudioElement = (userId) => {
+  const audio = document.createElement('audio');
+  audio.autoplay = true;
+  audio.playsInline = true;
+  audio.dataset.userId = String(userId);
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  remoteAudioElements.set(userId, audio);
+  return audio;
+};
+
+const closePeerConnection = (userId) => {
+  const connection = peerConnections.get(userId);
+  if (connection) {
+    connection.onicecandidate = null;
+    connection.ontrack = null;
+    connection.onconnectionstatechange = null;
+    connection.close();
+  }
+  peerConnections.delete(userId);
+
+  const audio = remoteAudioElements.get(userId);
+  if (audio) {
+    audio.srcObject = null;
+    audio.remove();
+  }
+  remoteAudioElements.delete(userId);
+};
+
+const cleanupVoiceResources = () => {
+  Array.from(peerConnections.keys()).forEach(closePeerConnection);
+  if (speakingInterval) {
+    clearInterval(speakingInterval);
+    speakingInterval = null;
+  }
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+  if (localStream) {
+    localStream.getTracks().forEach((track) => track.stop());
+    localStream = null;
+  }
+  activeSpeakerIds.clear();
+  lastSpeakingState = false;
+};
+
+const createPeerConnection = (remoteUserId) => {
+  const connection = new RTCPeerConnection(rtcConfig);
+  peerConnections.set(remoteUserId, connection);
+
+  if (localStream) {
+    localStream.getAudioTracks().forEach((track) => {
+      connection.addTrack(track, localStream);
+    });
+  }
+
+  connection.onicecandidate = (event) => {
+    if (!event.candidate) return;
+    socket.emit('voice_signal', {
+      target_id: remoteUserId,
+      signal: { type: 'candidate', candidate: event.candidate },
+    });
+  };
+
+  connection.ontrack = (event) => {
+    const [stream] = event.streams;
+    const audio = remoteAudioElements.get(remoteUserId) || createRemoteAudioElement(remoteUserId);
+    if (audio.srcObject !== stream) {
+      audio.srcObject = stream;
+    }
+  };
+
+  connection.onconnectionstatechange = () => {
+    const state = connection.connectionState;
+    if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+      closePeerConnection(remoteUserId);
+    }
+  };
+
+  return connection;
+};
+
+const getPeerConnection = (remoteUserId) => peerConnections.get(remoteUserId) || createPeerConnection(remoteUserId);
+
+const maybeStartSpeakingMonitor = () => {
+  if (!localStream || speakingInterval) return;
+  const [track] = localStream.getAudioTracks();
+  if (!track) return;
+
+  audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+
+  const buffer = new Uint8Array(analyser.fftSize);
+  speakingInterval = setInterval(() => {
+    analyser.getByteTimeDomainData(buffer);
+    let sumSquares = 0;
+    for (let i = 0; i < buffer.length; i += 1) {
+      const normalized = (buffer[i] - 128) / 128;
+      sumSquares += normalized * normalized;
+    }
+    const rms = Math.sqrt(sumSquares / buffer.length);
+    const isSpeaking = rms > 0.04;
+
+    if (isSpeaking !== lastSpeakingState) {
+      lastSpeakingState = isSpeaking;
+      socket.emit('voice_activity', { is_speaking: isSpeaking });
+    }
+  }, 120);
+};
+
+const ensureVoiceJoined = async () => {
+  if (joined) return true;
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+      video: false,
+    });
+    socket.emit('join_voice_room');
+    setJoined(true);
+    maybeStartSpeakingMonitor();
+    return true;
+  } catch (error) {
+    console.error('음성 장치 접근 실패', error);
+    return false;
+  }
+};
+
+const leaveVoice = () => {
+  if (!joined) return;
+  socket.emit('voice_activity', { is_speaking: false });
+  socket.emit('leave_voice_room');
+  cleanupVoiceResources();
+  setJoined(false);
+};
+
+const reconcilePeers = async (participants) => {
+  if (!joined || !localStream) return;
+
+  const myId = getCurrentUserId();
+  const remoteUsers = participants.filter((user) => user.id !== myId);
+  const currentRemoteIds = new Set(remoteUsers.map((user) => user.id));
+
+  Array.from(peerConnections.keys()).forEach((userId) => {
+    if (!currentRemoteIds.has(userId)) {
+      closePeerConnection(userId);
+    }
+  });
+
+  for (const user of remoteUsers) {
+    const shouldCreateOffer = myId < user.id;
+    const connection = getPeerConnection(user.id);
+    if (!shouldCreateOffer || connection.signalingState !== 'stable') continue;
+    try {
+      const offer = await connection.createOffer({ offerToReceiveAudio: true });
+      await connection.setLocalDescription(offer);
+      socket.emit('voice_signal', {
+        target_id: user.id,
+        signal: { type: 'offer', sdp: connection.localDescription },
+      });
+    } catch (error) {
+      console.error('오퍼 생성 실패', error);
+    }
+  }
+};
+
+toggleButton?.addEventListener('click', async () => {
   if (joined) {
-    socket.emit('leave_voice_room');
-    setJoined(false);
+    leaveVoice();
     return;
   }
-  socket.emit('join_voice_room');
-  setJoined(true);
+  await ensureVoiceJoined();
 });
 
 socket.on('connect', () => {
   socket.emit('request_voice_room');
 });
 
-socket.on('voice_room_update', (participants) => {
+socket.on('voice_room_update', async (participants) => {
   const users = Array.isArray(participants) ? participants : [];
+  latestParticipants = users;
   renderParticipants(users);
-  const iAmInRoom = users.some((user) => user.id === window.KJB_CURRENT_USER_ID);
-  setJoined(iAmInRoom);
+  const iAmInRoom = users.some((user) => user.id === getCurrentUserId());
+  if (!iAmInRoom && joined) {
+    cleanupVoiceResources();
+  }
+  setJoined(iAmInRoom && !!localStream);
+  await reconcilePeers(users);
+});
+
+socket.on('voice_activity_update', (payload) => {
+  activeSpeakerIds.clear();
+  const ids = Array.isArray(payload?.speaking_user_ids) ? payload.speaking_user_ids : [];
+  ids.forEach((id) => activeSpeakerIds.add(Number(id)));
+  renderParticipants(latestParticipants);
+});
+
+socket.on('voice_signal', async ({ from_id: fromId, signal }) => {
+  if (!joined || !fromId || !signal) return;
+  const connection = getPeerConnection(Number(fromId));
+
+  try {
+    if (signal.type === 'offer') {
+      await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      const answer = await connection.createAnswer();
+      await connection.setLocalDescription(answer);
+      socket.emit('voice_signal', {
+        target_id: Number(fromId),
+        signal: { type: 'answer', sdp: connection.localDescription },
+      });
+      return;
+    }
+
+    if (signal.type === 'answer') {
+      await connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      return;
+    }
+
+    if (signal.type === 'candidate' && signal.candidate) {
+      await connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  } catch (error) {
+    console.error('시그널 처리 실패', error);
+  }
 });
 
 window.addEventListener('beforeunload', () => {
   if (joined) {
+    socket.emit('voice_activity', { is_speaking: false });
     socket.emit('leave_voice_room');
   }
+  cleanupVoiceResources();
 });
