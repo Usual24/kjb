@@ -23,6 +23,7 @@ from .utils import (
 
 online_users = set()
 channel_typing_users = {}
+voice_room_users = set()
 
 
 def _current_user():
@@ -61,6 +62,20 @@ def _emit_typing_update(channel_slug):
         room=channel_slug,
     )
 
+
+
+def _voice_room_payload():
+    users = User.query.filter(User.id.in_(voice_room_users)).all() if voice_room_users else []
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email_prefix": user.email_prefix,
+            "avatar": media_url(user.avatar_url),
+        }
+        for user in users
+    ]
+
 def register_socket_handlers(socketio):
     @socketio.on("connect")
     def handle_connect():
@@ -76,6 +91,9 @@ def register_socket_handlers(socketio):
         if user and user.id in online_users:
             online_users.discard(user.id)
             emit("online_update", _online_payload(), broadcast=True)
+        if user and user.id in voice_room_users:
+            voice_room_users.discard(user.id)
+            emit("voice_room_update", _voice_room_payload(), broadcast=True)
         if user:
             for channel_slug in list(channel_typing_users.keys()):
                 typers = channel_typing_users.get(channel_slug, set())
@@ -114,6 +132,30 @@ def register_socket_handlers(socketio):
                 if not typers:
                     channel_typing_users.pop(channel_slug, None)
                 _emit_typing_update(channel_slug)
+
+
+    @socketio.on("join_voice_room")
+    def handle_join_voice_room():
+        user = _current_user()
+        if not user:
+            return
+        join_room("voice_room")
+        voice_room_users.add(user.id)
+        emit("voice_room_update", _voice_room_payload(), broadcast=True)
+
+    @socketio.on("leave_voice_room")
+    def handle_leave_voice_room():
+        user = _current_user()
+        if not user:
+            return
+        leave_room("voice_room")
+        if user.id in voice_room_users:
+            voice_room_users.discard(user.id)
+            emit("voice_room_update", _voice_room_payload(), broadcast=True)
+
+    @socketio.on("request_voice_room")
+    def handle_request_voice_room():
+        emit("voice_room_update", _voice_room_payload())
 
     @socketio.on("send_message")
     def handle_send_message(data):
