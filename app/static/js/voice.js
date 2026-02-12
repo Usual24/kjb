@@ -124,6 +124,9 @@ const createPeerConnection = (remoteUserId) => {
     const audio = remoteAudioElements.get(remoteUserId) || createRemoteAudioElement(remoteUserId);
     if (audio.srcObject !== stream) {
       audio.srcObject = stream;
+      audio.play().catch((error) => {
+        console.warn('원격 음성 자동 재생 실패', error);
+      });
     }
   };
 

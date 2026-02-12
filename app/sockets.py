@@ -254,7 +254,11 @@ def register_socket_handlers(socketio):
         user = _current_user()
         if not user or user.id not in voice_room_users:
             return
-        target_id = data.get("target_id")
+        target_id_raw = data.get("target_id")
+        try:
+            target_id = int(target_id_raw)
+        except (TypeError, ValueError):
+            return
         signal = data.get("signal")
         if not target_id or not signal:
             return
