@@ -1,6 +1,7 @@
 const socket = io();
 const chatMain = document.querySelector('.chat-main');
 const channel = chatMain.dataset.channel;
+const channelId = parseInt(chatMain.dataset.channelId, 10);
 const canSend = chatMain.dataset.canSend === 'true';
 const messageList = document.getElementById('chatMessages');
 const input = document.getElementById('chatInput');
@@ -15,7 +16,30 @@ let contextUserId = null;
 let typing = false;
 let typingTimer = null;
 
-socket.emit('join', { channel });
+const channelItems = Array.from(document.querySelectorAll('[data-channel-slug][data-channel-id]'));
+const joinedChannelSlugs = new Set(channelItems.map((item) => item.dataset.channelSlug).filter(Boolean));
+
+joinedChannelSlugs.forEach((slug) => {
+  socket.emit('join', { channel: slug });
+});
+
+function setUnreadDot(targetChannelId, isUnread) {
+  if (!targetChannelId) return;
+  const channelLinks = document.querySelectorAll(`a[data-channel-id="${targetChannelId}"]`);
+  channelLinks.forEach((link) => {
+    const existingDot = link.querySelector('.unread-dot');
+    if (isUnread && !existingDot) {
+      const dot = document.createElement('span');
+      dot.className = 'unread-dot';
+      dot.setAttribute('aria-label', '읽지 않음');
+      link.appendChild(dot);
+      return;
+    }
+    if (!isUnread && existingDot) {
+      existingDot.remove();
+    }
+  });
+}
 
 function markChannelRead(messageId) {
   if (!messageId) return;
@@ -24,7 +48,9 @@ function markChannelRead(messageId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
-  }).catch(() => {});
+  })
+    .then(() => setUnreadDot(channelId, false))
+    .catch(() => {});
 }
 
 function updateTypingState(nextState) {
@@ -61,6 +87,7 @@ function appendMessage(message) {
   const element = renderMessage(message);
   messageList.appendChild(element);
   messageList.scrollTop = messageList.scrollHeight;
+  setUnreadDot(channelId, false);
   markChannelRead(message.id);
 }
 
@@ -104,6 +131,10 @@ socket.on('typing_update', (payload) => {
 });
 
 socket.on('new_message', (message) => {
+  if (message.channel_id !== channelId) {
+    setUnreadDot(message.channel_id, true);
+    return;
+  }
   appendMessage(message);
 });
 
@@ -212,3 +243,4 @@ const lastMessage = messageList.querySelector('.message:last-of-type');
 if (lastMessage) {
   markChannelRead(parseInt(lastMessage.dataset.messageId, 10));
 }
+setUnreadDot(channelId, false);
