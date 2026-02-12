@@ -21,6 +21,7 @@ from .utils import adjust_kc, media_url, render_chat_content, resolve_channel_pe
 online_users = set()
 channel_typing_users = {}
 voice_room_users = set()
+voice_speaking_users = set()
 
 
 def _current_user():
@@ -155,6 +156,10 @@ def _voice_room_payload():
     ]
 
 
+def _voice_activity_payload():
+    return {"speaking_user_ids": list(voice_speaking_users)}
+
+
 def register_socket_handlers(socketio):
     @socketio.on("connect")
     def handle_connect():
@@ -162,6 +167,7 @@ def register_socket_handlers(socketio):
         if not user:
             return False
         online_users.add(user.id)
+        join_room(f"user_{user.id}")
         emit("online_update", _online_payload(), broadcast=True)
 
     @socketio.on("disconnect")
@@ -173,6 +179,9 @@ def register_socket_handlers(socketio):
         if user and user.id in voice_room_users:
             voice_room_users.discard(user.id)
             emit("voice_room_update", _voice_room_payload(), broadcast=True)
+        if user and user.id in voice_speaking_users:
+            voice_speaking_users.discard(user.id)
+            emit("voice_activity_update", _voice_activity_payload(), broadcast=True)
         if user:
             for channel_slug in list(channel_typing_users.keys()):
                 typers = channel_typing_users.get(channel_slug, set())
@@ -220,6 +229,7 @@ def register_socket_handlers(socketio):
         join_room("voice_room")
         voice_room_users.add(user.id)
         emit("voice_room_update", _voice_room_payload(), broadcast=True)
+        emit("voice_activity_update", _voice_activity_payload())
 
     @socketio.on("leave_voice_room")
     def handle_leave_voice_room():
@@ -230,10 +240,43 @@ def register_socket_handlers(socketio):
         if user.id in voice_room_users:
             voice_room_users.discard(user.id)
             emit("voice_room_update", _voice_room_payload(), broadcast=True)
+        if user.id in voice_speaking_users:
+            voice_speaking_users.discard(user.id)
+            emit("voice_activity_update", _voice_activity_payload(), broadcast=True)
 
     @socketio.on("request_voice_room")
     def handle_request_voice_room():
         emit("voice_room_update", _voice_room_payload())
+        emit("voice_activity_update", _voice_activity_payload())
+
+    @socketio.on("voice_signal")
+    def handle_voice_signal(data):
+        user = _current_user()
+        if not user or user.id not in voice_room_users:
+            return
+        target_id = data.get("target_id")
+        signal = data.get("signal")
+        if not target_id or not signal:
+            return
+        if target_id not in voice_room_users:
+            return
+        emit("voice_signal", {"from_id": user.id, "signal": signal}, to=f"user_{target_id}")
+
+    @socketio.on("voice_activity")
+    def handle_voice_activity(data):
+        user = _current_user()
+        if not user or user.id not in voice_room_users:
+            return
+        is_speaking = bool(data.get("is_speaking"))
+        changed = False
+        if is_speaking and user.id not in voice_speaking_users:
+            voice_speaking_users.add(user.id)
+            changed = True
+        if not is_speaking and user.id in voice_speaking_users:
+            voice_speaking_users.discard(user.id)
+            changed = True
+        if changed:
+            emit("voice_activity_update", _voice_activity_payload(), broadcast=True)
 
     @socketio.on("send_message")
     def handle_send_message(data):
