@@ -1,4 +1,5 @@
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 from flask import (
     Blueprint,
     render_template,
@@ -187,12 +188,17 @@ def chat():
     messages = []
     serialized_messages = []
     if permissions["can_read"]:
-        messages = (
-            Message.query.filter_by(channel_id=channel.id)
-            .order_by(Message.created_at.asc())
+        latest_messages = (
+            Message.query.options(
+                joinedload(Message.user),
+                joinedload(Message.reply_to),
+            )
+            .filter_by(channel_id=channel.id)
+            .order_by(Message.id.desc())
             .limit(200)
             .all()
         )
+        messages = list(reversed(latest_messages))
         serialized_messages = serialize_messages(messages)
         if messages:
             _mark_channel_read(current, channel.id, messages[-1].id)
