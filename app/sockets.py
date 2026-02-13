@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import session
 from flask_socketio import emit, join_room, leave_room
@@ -20,6 +20,8 @@ from .utils import adjust_kc, media_url, render_chat_content, resolve_channel_pe
 
 online_users = set()
 channel_typing_users = {}
+connected_user_profiles = {}
+public_emoji_cache = {"expires_at": None, "map": {}}
 
 
 def _current_user():
@@ -44,12 +46,24 @@ def _mark_channel_read(user_id, channel_id, message_id):
 
 def _emit_typing_update(channel_slug):
     user_ids = list(channel_typing_users.get(channel_slug, set()))
-    users = User.query.filter(User.id.in_(user_ids)).all() if user_ids else []
+    users = [connected_user_profiles[user_id] for user_id in user_ids if user_id in connected_user_profiles]
     emit(
         "typing_update",
-        {"channel": channel_slug, "users": [{"id": user.id, "name": user.name} for user in users]},
+        {"channel": channel_slug, "users": users},
         room=channel_slug,
     )
+
+
+def _public_emoji_map():
+    now = datetime.utcnow()
+    expires_at = public_emoji_cache["expires_at"]
+    if expires_at and expires_at > now:
+        return public_emoji_cache["map"]
+    public_emojis = Emoji.query.filter_by(is_public=True).all()
+    emoji_map = {emoji.name: emoji.image_url for emoji in public_emojis}
+    public_emoji_cache["map"] = emoji_map
+    public_emoji_cache["expires_at"] = now.replace(microsecond=0) + timedelta(seconds=30)
+    return emoji_map
 
 
 def _active_accessory_map(user_ids):
@@ -72,8 +86,7 @@ def _active_accessory_map(user_ids):
 
 
 def _emoji_scope_map(messages):
-    public_emojis = Emoji.query.filter_by(is_public=True).all()
-    base_emoji_map = {emoji.name: emoji.image_url for emoji in public_emojis}
+    base_emoji_map = _public_emoji_map()
     user_ids = {message.user_id for message in messages}
     if not user_ids:
         return base_emoji_map, {}
@@ -149,6 +162,7 @@ def register_socket_handlers(socketio):
         if not user:
             return False
         online_users.add(user.id)
+        connected_user_profiles[user.id] = {"id": user.id, "name": user.name}
         join_room(f"user_{user.id}")
         emit("online_update", _online_payload(), broadcast=True)
 
@@ -157,6 +171,7 @@ def register_socket_handlers(socketio):
         user = _current_user()
         if user and user.id in online_users:
             online_users.discard(user.id)
+            connected_user_profiles.pop(user.id, None)
             emit("online_update", _online_payload(), broadcast=True)
         if user:
             for channel_slug in list(channel_typing_users.keys()):
@@ -218,8 +233,6 @@ def register_socket_handlers(socketio):
         message = Message(channel_id=channel.id, user_id=user.id, content=content, reply_to_id=reply_to_id)
         db.session.add(message)
         adjust_kc(user, 1, "채팅 보상", db, KCLog, Notification)
-        db.session.commit()
-
         _mark_channel_read(user.id, channel.id, message.id)
         db.session.commit()
 

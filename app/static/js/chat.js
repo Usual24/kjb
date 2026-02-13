@@ -24,20 +24,21 @@ let typing = false;
 let typingTimer = null;
 let readTimer = null;
 let latestReadMessageId = null;
+let lastFlushedReadMessageId = null;
 let sendInFlight = false;
+let isSocketConnected = false;
 
 const channelItems = Array.from(document.querySelectorAll('[data-channel-slug][data-channel-id]'));
 const joinedChannelSlugs = new Set(channelItems.map((item) => item.dataset.channelSlug).filter(Boolean));
 
-joinedChannelSlugs.forEach((slug) => {
-  socket.emit('join', { channel: slug });
-});
+function refreshSendButtonState() {
+  if (!sendButton) return;
+  sendButton.disabled = !canSend || sendInFlight || !isSocketConnected;
+}
 
 function setSendingState(isSending) {
   sendInFlight = isSending;
-  if (sendButton) {
-    sendButton.disabled = isSending || !canSend;
-  }
+  refreshSendButtonState();
 }
 
 function setUnreadDot(targetChannelId, isUnread) {
@@ -59,7 +60,7 @@ function setUnreadDot(targetChannelId, isUnread) {
 }
 
 function flushReadState() {
-  if (!latestReadMessageId) return;
+  if (!latestReadMessageId || latestReadMessageId === lastFlushedReadMessageId) return;
   const body = new URLSearchParams({ channel, message_id: latestReadMessageId.toString() });
   fetch('/chat/read', {
     method: 'POST',
@@ -67,7 +68,10 @@ function flushReadState() {
     body: body.toString(),
     keepalive: true,
   })
-    .then(() => setUnreadDot(channelId, false))
+    .then(() => {
+      lastFlushedReadMessageId = latestReadMessageId;
+      setUnreadDot(channelId, false);
+    })
     .catch(() => {});
 }
 
@@ -144,7 +148,22 @@ function updateOnlineList(users) {
   });
 }
 
+socket.on('connect', () => {
+  isSocketConnected = true;
+  joinedChannelSlugs.forEach((slug) => {
+    socket.emit('join', { channel: slug });
+  });
+  refreshSendButtonState();
+});
+
+socket.on('disconnect', () => {
+  isSocketConnected = false;
+  setSendingState(false);
+  updateTypingState(false);
+});
+
 socket.on('connect_error', () => {
+  isSocketConnected = false;
   setSendingState(false);
 });
 
@@ -195,15 +214,13 @@ socket.on('message_deleted', (payload) => {
   element.querySelector('.message-content').textContent = '[삭제됨]';
 });
 
-sendButton.addEventListener('click', () => {
-  if (!canSend || sendInFlight) return;
-  const content = input.value.trim();
-  if (!content) return;
+function emitSendMessage(payload, hasRetried = false) {
+  socket.timeout(12000).emit('send_message', payload, (err, response) => {
+    if ((err || !response || !response.ok) && !hasRetried && socket.connected) {
+      emitSendMessage(payload, true);
+      return;
+    }
 
-  const pendingReplyId = replyToId;
-  setSendingState(true);
-
-  socket.timeout(8000).emit('send_message', { channel, content, reply_to: pendingReplyId }, (err, response) => {
     setSendingState(false);
     if (err || !response || !response.ok) {
       alert('메시지 전송이 지연되거나 실패했습니다. 네트워크 상태를 확인해주세요.');
@@ -215,6 +232,16 @@ sendButton.addEventListener('click', () => {
     replyBanner.classList.add('hidden');
     updateTypingState(false);
   });
+}
+
+sendButton.addEventListener('click', () => {
+  if (!canSend || sendInFlight || !socket.connected) return;
+  const content = input.value.trim();
+  if (!content) return;
+
+  const pendingReplyId = replyToId;
+  setSendingState(true);
+  emitSendMessage({ channel, content, reply_to: pendingReplyId });
 });
 
 input.addEventListener('input', () => {
@@ -291,3 +318,4 @@ if (lastMessage) {
   queueMarkChannelRead(parseInt(lastMessage.dataset.messageId, 10));
 }
 setUnreadDot(channelId, false);
+refreshSendButtonState();

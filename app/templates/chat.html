@@ -91,10 +91,10 @@
   <button data-action="delete">삭제</button>
 </div>
 
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script defer src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
   window.KJB_CURRENT_USER_ID = {{ current_user.id }};
   window.KJB_IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 </script>
-<script src="/static/js/chat.js"></script>
+<script defer src="/static/js/chat.js"></script>
 {% endblock %}
